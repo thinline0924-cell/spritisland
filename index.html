@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>精霊の島</title>
+  <meta name="description" content="スピリット・アイランドを題材にした、一人で遊べる3Dボードゲーム。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script type="importmap">
+    { "imports": { "three": "./lib/three.module.min.js", "three/addons/": "./lib/addons/" } }
+  </script>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="labels"></div>
+
+  <!-- 上の真ん中:ターンとフェイズ -->
+  <div id="phase" class="hud"></div>
+
+  <!-- 右上の丸いボタン(メニュー) -->
+  <button id="menu-btn" class="ring-btn" aria-label="メニュー"><span class="tri"></span></button>
+  <div id="menu" class="panel hidden">
+    <button data-act="rules">遊び方</button>
+    <button data-act="log">行動の記録</button>
+    <button data-act="view">視点をもどす</button>
+    <button data-act="new">新しいゲーム</button>
+  </div>
+
+  <!-- 左上:精霊 -->
+  <section id="spirit-panel" class="panel side left">
+    <header class="panel-head" data-toggle="spirit-panel"><span id="spirit-name">精霊</span><i class="chev"></i></header>
+    <div class="panel-body" id="spirit-body"></div>
+  </section>
+
+  <!-- 右上:侵略者・恐怖・荒廃 -->
+  <section id="island-panel" class="panel side right">
+    <header class="panel-head" data-toggle="island-panel"><span>島のようす</span><i class="chev"></i></header>
+    <div class="panel-body" id="island-body"></div>
+  </section>
+
+  <!-- 下:案内と手札 -->
+  <div id="bottom">
+    <div id="prompt" class="hud hidden">
+      <div id="prompt-title"></div>
+      <div id="prompt-buttons"></div>
+    </div>
+    <div id="hand-wrap">
+      <div id="hand-info"></div>
+      <div id="hand"></div>
+    </div>
+  </div>
+
+  <!-- 行動の記録 -->
+  <section id="log" class="panel hidden">
+    <header class="panel-head"><span>行動の記録</span><button id="log-close" class="x">×</button></header>
+    <ol id="log-list"></ol>
+  </section>
+  <div id="toast"></div>
+
+  <div id="tooltip" class="hidden"></div>
+
+  <div id="modal" class="overlay hidden"><div id="modal-box" class="panel"></div></div>
+  <div id="sheet" class="overlay hidden"><div id="sheet-box" class="panel"></div></div>
+
+  <noscript>このゲームを遊ぶには JavaScript を有効にしてください。</noscript>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
