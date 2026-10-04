@@ -4,6 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Reflector } from 'three/addons/objects/Reflector.js';
 import { TERRAIN } from './data.js';
 import { mulberry32 } from './boardgen.js';
+import { Effects, ease } from './effects.js';
 
 const HL_COLORS = {
   select: new THREE.Color('#9fd6ff'),
@@ -63,6 +64,11 @@ export class Board3D {
     this.buildPieceAssets();
     this.pieceGroup = new THREE.Group();
     this.scene.add(this.pieceGroup);
+    this.fx = new Effects(this);
+    this.anims = new Map();
+    this.moveHints = [];
+    this.vanishHints = [];
+    this.lastPos = null;
     this.buildLabels();
 
     this.raycaster = new THREE.Raycaster();
@@ -486,28 +492,110 @@ export class Board3D {
     return g;
   }
 
+  // 駒の移動・取り除きの予告(次の setPieces で演出に使う)
+  hintMove(d) { this.moveHints.push({ ...d, t: this.clock.getElapsedTime() }); }
+  hintVanish(d) { this.vanishHints.push({ ...d, t: this.clock.getElapsedTime() }); }
+
   setPieces(lands, spiritColor) {
+    this.spiritColor = spiritColor;
+    const t = this.clock.getElapsedTime();
     const grp = this.pieceGroup;
     while (grp.children.length) grp.remove(grp.children[0]);
     const order = ['presence', 'dahan', 'cities', 'towns', 'explorers', 'blight'];
+    const now = {};
     for (const L of lands) {
       const slots = this.slots[L.id];
       let si = 0;
       for (const kind of order) {
         const n = L[kind];
+        const key = `${L.id}:${kind}`;
+        now[key] = [];
         for (let i = 0; i < n; i++) {
           const p = this.makePiece(kind, spiritColor);
           const slot = slots[si % slots.length];
           const lift = Math.floor(si / slots.length) * 1.1;
+          const target = new THREE.Vector3(slot.x, slot.y + lift, slot.z);
           p.scale.setScalar(1.55);
-          p.position.set(slot.x, slot.y + lift, slot.z);
+          p.position.copy(target);
           p.rotation.y = (si * 1.7) % (Math.PI * 2);
-          p.userData.baseY = p.position.y;
+          p.userData.target = target;
+          p.userData.akey = `${key}:${i}`;
           p.userData.phase = si;
+          now[key].push(target);
           grp.add(p);
           si++;
         }
       }
+    }
+    // 前回との差を調べて演出する
+    this.moveHints = this.moveHints.filter(h => t - h.t < 2);
+    this.vanishHints = this.vanishHints.filter(h => t - h.t < 2);
+    if (this.lastPos) {
+      const removedAt = {};
+      for (const key of Object.keys(now)) {
+        const before = this.lastPos[key] || [], after = now[key];
+        const [id, kind] = key.split(':');
+        // 減った駒
+        for (let i = after.length; i < before.length; i++) {
+          const pos = before[i];
+          const mv = this.moveHints.find(h => h.from === +id && h.kind === kind && !h.fromPos);
+          if (mv) { mv.fromPos = pos; continue; }
+          const vi = this.vanishHints.findIndex(h => h.land === +id && h.kind === kind && h.n > 0);
+          if (vi >= 0) { this.vanishHints[vi].n--; this.fx.pieceVanished(kind, pos); continue; }
+          (removedAt[key] = removedAt[key] || []).push(pos);
+          this.fx.pieceDestroyed(kind, pos);
+        }
+        // 位置が変わった駒はすべらせる
+        for (let i = 0; i < Math.min(before.length, after.length); i++) {
+          if (before[i].distanceToSquared(after[i]) > 0.01) {
+            const cur = this.anims.get(`${key}:${i}`);
+            if (!cur || cur.type === 'slide') this.anims.set(`${key}:${i}`, { type: 'slide', start: t, dur: 0.35, from: before[i].clone() });
+          }
+        }
+      }
+      for (const key of Object.keys(now)) {
+        const before = this.lastPos[key] || [], after = now[key];
+        const [id, kind] = key.split(':');
+        // 増えた駒
+        for (let i = before.length; i < after.length; i++) {
+          const ak = `${key}:${i}`;
+          const mv = this.moveHints.find(h => h.to === +id && h.kind === kind && h.fromPos && !h.used);
+          if (mv) {
+            mv.used = true;
+            this.fx.arc(mv.fromPos.clone().setY(mv.fromPos.y + 0.5), after[i].clone().setY(after[i].y + 0.5), kind === 'dahan' ? '#fff0d0' : '#ffb080', 0.6, 2.5);
+            this.fx.sound.play('whoosh');
+            this.anims.set(ak, { type: 'pop', start: t, delay: 0.55, dur: 0.35 });
+          } else if (kind === 'explorers' || kind === 'towns' || kind === 'cities') {
+            this.anims.set(ak, { type: 'drop', start: t, delay: kind === 'explorers' ? 0.55 : 0.1, dur: 0.75 });
+          } else {
+            this.anims.set(ak, { type: 'pop', start: t, delay: 0.05, dur: 0.5 });
+            this.fx.pieceAdded(kind, after[i]);
+          }
+        }
+      }
+      this.moveHints = this.moveHints.filter(h => !h.used);
+    }
+    this.lastPos = now;
+  }
+
+  // 駒の動き(毎フレーム)
+  animatePieces(t) {
+    for (const p of this.pieceGroup.children) {
+      const tg = p.userData.target;
+      let y = tg.y, x = tg.x, z = tg.z, sc = 1.55;
+      p.visible = true;
+      const a = this.anims.get(p.userData.akey);
+      if (a) {
+        const k = (t - a.start - (a.delay || 0)) / a.dur;
+        if (k >= 1) this.anims.delete(p.userData.akey);
+        else if (k < 0) { if (a.type === 'slide') { x = a.from.x; y = a.from.y; z = a.from.z; } else p.visible = false; }
+        else if (a.type === 'drop') { y = tg.y + 6 * (1 - ease.outBounce(k)); }
+        else if (a.type === 'pop') { sc = 1.55 * Math.max(0.01, ease.outBack(k)); }
+        else if (a.type === 'slide') { const e = ease.outCubic(k); x = a.from.x + (tg.x - a.from.x) * e; y = a.from.y + (tg.y - a.from.y) * e; z = a.from.z + (tg.z - a.from.z) * e; }
+      }
+      if (p.userData.bob) y += 0.08 + Math.sin(t * 2 + p.userData.phase) * 0.07;
+      p.position.set(x, y, z);
+      p.scale.setScalar(sc);
     }
   }
 
@@ -585,10 +673,10 @@ export class Board3D {
       }
     });
 
-    // 存在の浮遊
-    for (const p of this.pieceGroup.children) {
-      if (p.userData.bob) p.position.y = p.userData.baseY + 0.08 + Math.sin(t * 2 + p.userData.phase) * 0.07;
-    }
+    const dt = Math.min(0.05, t - (this.lastT || t));
+    this.lastT = t;
+    this.animatePieces(t);
+    this.fx.update(t, dt);
 
     // ほたる
     const pos = this.fireflies.geometry.attributes.position;
@@ -611,6 +699,8 @@ export class Board3D {
       el.style.transform = `translate(-50%,-50%) translate(${Math.round((v.x * 0.5 + 0.5) * w)}px, ${Math.round((-v.y * 0.5 + 0.5) * h)}px)`;
     });
 
+    const off = this.fx.applyShake(this.camera, dt);
     this.renderer.render(this.scene, this.camera);
+    if (off) this.camera.position.sub(off);
   }
 }

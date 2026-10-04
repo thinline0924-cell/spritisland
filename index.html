@@ -16,6 +16,9 @@
 <body>
   <div id="stage"></div>
   <div id="labels"></div>
+  <div id="fx-layer"></div>
+  <div id="screen-flash"></div>
+  <div id="banner"></div>
 
   <!-- 上の真ん中:ターンとフェイズ -->
   <div id="phase" class="hud"></div>
@@ -24,7 +27,9 @@
   <button id="menu-btn" class="ring-btn" aria-label="メニュー"><span class="tri"></span></button>
   <div id="menu" class="panel hidden">
     <button data-act="rules">遊び方</button>
+    <button data-act="glossary">用語集</button>
     <button data-act="log">行動の記録</button>
+    <button data-act="sound" id="sound-btn">効果音:オン</button>
     <button data-act="view">視点をもどす</button>
     <button data-act="new">新しいゲーム</button>
   </div>

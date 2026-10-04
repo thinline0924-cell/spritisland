@@ -79,7 +79,7 @@ export class Game {
     return this.spirit.def.innate.levels.map(lv => Object.entries(lv.need).every(([k, v]) => el[k] >= v));
   }
 
-  // 存在からの距離(範囲)の内側にある土地
+  // 灯りからの距離(距離)の内側にある土地
   landsInRange(range) {
     const dist = new Array(this.lands.length).fill(Infinity);
     const q = [];
@@ -118,11 +118,14 @@ export class Game {
     if (win) throw new GameOver(true, why);
   }
   checkPresence() {
-    if (this.totalPresence() === 0) throw new GameOver(false, '島から精霊の存在がすべて消えてしまった');
+    if (this.totalPresence() === 0) throw new GameOver(false, '島から精霊の灯りがすべて消えてしまった');
   }
 
   // ---------- 恐怖 ----------
-  addFear(n) {
+  fx(kind, data) { if (this.ui.fx) this.ui.fx(kind, data); }
+
+  addFear(n, L = this.fxLand) {
+    this.fx('fear', { land: L ? L.id : null, n });
     for (let i = 0; i < n; i++) {
       this.fear.pool++;
       this.stats.fearTotal++;
@@ -131,12 +134,16 @@ export class Game {
         const card = this.fear.deck.shift();
         if (card) {
           this.fear.earned.push(card);
-          this.log(`恐怖カードを1枚獲得した(侵略者フェイズで効果が出ます)`, 'fear');
+          this.log(`恐怖が${this.fear.perCard}たまり、恐怖カードを1枚獲得した(侵略者の手番のはじめに効果が出ます)`, 'fear');
+          this.fx('fearCard', {});
         }
         const earnedTotal = 9 - this.fear.deck.length;
         const before = this.fear.terror;
         this.fear.terror = earnedTotal >= 6 ? 3 : earnedTotal >= 3 ? 2 : 1;
-        if (this.fear.terror !== before) this.log(`恐怖レベルが ${this.fear.terror} に上がった!勝利条件がやさしくなります`, 'fear');
+        if (this.fear.terror !== before) {
+          this.log(`恐怖レベルが ${this.fear.terror} に上がった!勝利条件がやさしくなり、恐怖カードの効果も強くなります`, 'fear');
+          this.fx('banner', { text: `恐怖レベル ${'ⅠⅡⅢ'[this.fear.terror - 1]}`, sub: '勝利条件がやさしくなった', kind: 'fear' });
+        }
         if (this.fear.deck.length === 0) throw new GameOver(true, '侵略者は恐怖に耐えきれず、島から逃げ出した(恐怖カードをすべて獲得)');
       }
     }
@@ -154,6 +161,7 @@ export class Game {
       else if (L.explorers > 0) { L.explorers--; dmg -= 1; killed.explorers++; }
       else break;
     }
+    this.fx('damage', { land: L.id, amount: n });
     this.afterKill(L, killed, `${n}ダメージ`);
   }
 
@@ -161,7 +169,7 @@ export class Game {
     const k = Math.min(n, L[type]);
     if (k <= 0) return;
     L[type] -= k;
-    if (type === 'dahan') { this.log(`${this.landName(L)}:ダハンが${k}人倒れた`, 'bad'); this.update(); return; }
+    if (type === 'dahan') { this.log(`${this.landName(L)}:島の民が${k}人倒れた`, 'bad'); this.fx('text', { land: L.id, text: `島の民 −${k}`, kind: 'bad' }); this.update(); return; }
     const killed = { explorers: 0, towns: 0, cities: 0 };
     killed[type] = k;
     this.afterKill(L, killed, '破壊');
@@ -171,35 +179,48 @@ export class Game {
     const parts = INVADER_TYPES.filter(t => killed[t] > 0).map(t => `${PIECES[t]}${killed[t]}`);
     const total = killed.explorers + killed.towns + killed.cities;
     this.stats.destroyed += total;
-    if (parts.length) this.log(`${this.landName(L)}:${what} → ${parts.join('・')}を破壊`, 'good');
+    if (parts.length) {
+      this.log(`${this.landName(L)}:${what} → ${parts.join('・')}を破壊`, 'good');
+      this.fx('text', { land: L.id, text: `${parts.join('・')} 破壊`, kind: 'good', delay: 250 });
+    }
     else this.log(`${this.landName(L)}:${what}(破壊できる侵略者はいなかった)`);
     this.update();
     const fear = killed.towns * 1 + killed.cities * 2;
-    if (fear) this.addFear(fear);
+    if (fear) this.addFear(fear, L);
     this.checkVictory();
   }
 
   remove(L, type, n) {
     const k = Math.min(n, L[type]);
     L[type] -= k;
-    if (k) this.log(`${this.landName(L)}:${PIECES[type]}を${k}つ取り除いた`, 'good');
+    if (k) {
+      this.log(`${this.landName(L)}:${PIECES[type]}を${k}つ取り除いた(破壊ではないので恐怖は生まれない)`, 'good');
+      this.fx('vanish', { land: L.id, kind: type, n: k });
+    }
     this.update();
     this.checkVictory();
   }
 
-  defend(L, n) { L.defend += n; this.log(`${this.landName(L)}:防御${n}(このターンの荒らしのダメージが減る)`); this.update(); }
-  skip(L, what) {
-    L.skip[what] = true;
-    const label = { ravage: '荒らし', build: '建設', explore: '探検' }[what];
-    this.log(`${this.landName(L)}:次の${label}が起きない`);
+  defend(L, n) {
+    L.defend += n;
+    this.log(`${this.landName(L)}:守り${n}(このターンの襲撃で受けるダメージが${n}減る)`);
+    this.fx('shield', { land: L.id, text: `守り+${n}` });
     this.update();
   }
-  addDahan(L, n) { L.dahan += n; this.log(`${this.landName(L)}:ダハンが${n}人加わった`, 'good'); this.update(); }
+  skip(L, what) {
+    L.skip[what] = true;
+    const label = { ravage: '襲撃', build: '建設', explore: '探検' }[what];
+    this.log(`${this.landName(L)}:次の${label}が起きない`);
+    this.fx('text', { land: L.id, text: `${label}を封じた`, kind: 'calm' });
+    this.update();
+  }
+  addDahan(L, n) { L.dahan += n; this.log(`${this.landName(L)}:島の民が${n}人加わった`, 'good'); this.fx('text', { land: L.id, text: `島の民 +${n}`, kind: 'good' }); this.update(); }
   gainEnergy(n) { this.spirit.energy += n; this.log(`エネルギー+${n}`); this.update(); }
   removeBlight(L) {
     if (L.blight <= 0) return;
     L.blight--; this.blight.pool++;
-    this.log(`${this.landName(L)}:荒廃を1つ取り除いた`, 'good');
+    this.log(`${this.landName(L)}:荒れ地を1つ取り除いた(荒れ地の残りが1つ増えた)`, 'good');
+    this.fx('heal', { land: L.id });
     this.update();
   }
 
@@ -208,19 +229,22 @@ export class Game {
       if (!this.blight.flipped) {
         this.blight.flipped = true;
         this.blight.pool += this.diff.blightFlip;
-        this.log(`荒廃が尽き、島が「荒れ果てた島」になった。あと${this.diff.blightFlip}つで負けです`, 'bad');
-        await this.ui.notice('島が荒れ果てた', `荒廃カードがひっくり返りました。荒廃はあと ${this.diff.blightFlip} つ。尽きたら負けです。`);
+        this.log(`荒れ地が尽き、島が「荒れ果てた島」になった。あと${this.diff.blightFlip}つで負けです`, 'bad');
+        this.fx('banner', { text: '島が荒れ果てた', sub: `荒れ地はあと ${this.diff.blightFlip} つ`, kind: 'bad' });
+        await this.ui.notice('島が荒れ果てた', `荒れ地カードがひっくり返りました。荒れ地はあと ${this.diff.blightFlip} つ。尽きたら負けです。`);
       } else {
-        throw new GameOver(false, '島が荒廃に覆いつくされた(荒廃が尽きた)');
+        throw new GameOver(false, '島が荒れ地に覆いつくされた(荒れ地が尽きた)');
       }
     }
     this.blight.pool--;
     const had = L.blight > 0;
     L.blight++;
-    this.log(`${this.landName(L)}:荒廃が1つ置かれた`, 'bad');
+    this.log(`${this.landName(L)}:荒れ地が1つ置かれた(残り${this.blight.pool})`, 'bad');
+    this.fx('blight', { land: L.id });
     if (L.presence > 0) {
       L.presence--;
-      this.log(`${this.landName(L)}:荒廃で精霊の存在が1つ消えた`, 'bad');
+      this.log(`${this.landName(L)}:荒れ地に飲まれて、精霊の灯りが1つ消えた`, 'bad');
+      this.fx('text', { land: L.id, text: '灯りが消えた', kind: 'bad', delay: 300 });
       this.update();
       this.checkPresence();
     }
@@ -228,34 +252,37 @@ export class Game {
     // やさしい/ふつうでは、広がった先からさらに広がることはない(むずかしいは連鎖する)
     if (had && (!fromCascade || this.diff.chainCascade)) {
       const ids = L.adj;
-      this.log(`荒廃が広がる!(すでに荒廃があったため)`, 'bad');
-      const dest = await this.ui.chooseLand({ ids, title: `荒廃が ${this.landName(L)} から広がります。広がる先の土地を選んでください` });
+      this.log(`荒れ地が広がる!(${this.landName(L)}にはもともと荒れ地があったため)`, 'bad');
+      const dest = await this.ui.chooseLand({ ids, title: `荒れ地が ${this.landName(L)} から広がります(もともと荒れ地があった土地に、さらに荒れ地が置かれたため)。広がる先のとなりの土地を選んでください` });
+      this.fx('cascade', { from: L.id, to: dest });
+      await this.ui.pause(500);
       await this.addBlight(this.land(dest), true);
     }
   }
 
-  // 押し出し:最大 n 個
+  // 追い払い:最大 n 個
   async push(L, types, n) {
     let moved = 0;
     while (moved < n) {
       const avail = types.filter(t => L[t] > 0);
       if (!avail.length) break;
       const type = await this.ui.chooseOption({
-        title: `${this.landName(L)}から押し出す駒を選んでください(${moved}/${n})`,
-        options: [...avail.map(t => ({ label: `${PIECES[t]}(${L[t]})`, value: t })), { label: '押し出しを終える', value: null, ghost: true }],
+        title: `${this.landName(L)}から追い払う駒を選んでください(${moved}/${n})`,
+        options: [...avail.map(t => ({ label: `${PIECES[t]}(${L[t]})`, value: t })), { label: '追い払いを終える', value: null, ghost: true }],
       });
       if (!type) break;
-      const dest = await this.ui.chooseLand({ ids: L.adj, title: `${PIECES[type]}をどこへ押し出しますか?(となりの土地)`, optional: true });
+      const dest = await this.ui.chooseLand({ ids: L.adj, title: `${PIECES[type]}をどこへ追い払いますか?(となりの土地)`, optional: true });
       if (dest == null) break;
       const D = this.land(dest);
+      this.fx('move', { from: L.id, to: D.id, kind: type });
       L[type]--; D[type]++;
       moved++;
-      this.log(`${PIECES[type]}を ${this.landName(L)} → ${this.landName(D)} へ押し出した`);
+      this.log(`${PIECES[type]}を ${this.landName(L)} → ${this.landName(D)} へ追い払った`);
       this.update();
     }
   }
 
-  // 集める:となりの土地から最大 n 個
+  // 呼び寄せる:となりの土地から最大 n 個
   async gather(L, types, n) {
     let moved = 0;
     while (moved < n) {
@@ -263,18 +290,19 @@ export class Game {
       if (!src.length) break;
       const from = await this.ui.chooseLand({
         ids: src, optional: true,
-        title: `${this.landName(L)}へ集める元の土地を選んでください(${moved}/${n}:${types.map(t => PIECES[t]).join('・')})`,
+        title: `${this.landName(L)}へ呼び寄せる元の土地を選んでください(${moved}/${n}:${types.map(t => PIECES[t]).join('・')})`,
       });
       if (from == null) break;
       const S = this.land(from);
       const avail = types.filter(t => S[t] > 0);
       let type = avail[0];
       if (avail.length > 1) {
-        type = await this.ui.chooseOption({ title: '集める駒を選んでください', options: avail.map(t => ({ label: PIECES[t], value: t })) });
+        type = await this.ui.chooseOption({ title: '呼び寄せる駒を選んでください', options: avail.map(t => ({ label: PIECES[t], value: t })) });
       }
+      this.fx('move', { from: S.id, to: L.id, kind: type });
       S[type]--; L[type]++;
       moved++;
-      this.log(`${PIECES[type]}を ${this.landName(S)} → ${this.landName(L)} へ集めた`);
+      this.log(`${PIECES[type]}を ${this.landName(S)} → ${this.landName(L)} へ呼び寄せた`);
       this.update();
     }
   }
@@ -296,12 +324,12 @@ export class Game {
   async pushChoice(types, n) {
     const ids = this.lands.filter(L => types.some(t => L[t] > 0)).map(L => L.id);
     if (!ids.length) return;
-    const id = await this.ui.chooseLand({ ids, optional: true, title: '押し出す土地を選んでください' });
+    const id = await this.ui.chooseLand({ ids, optional: true, title: '追い払う土地を選んでください' });
     if (id == null) return;
     await this.push(this.land(id), types, n);
   }
   async skipChoice(what, n) {
-    const label = { ravage: '荒らし', build: '建設', explore: '探検' }[what];
+    const label = { ravage: '襲撃', build: '建設', explore: '探検' }[what];
     for (let i = 0; i < n; i++) {
       const ids = this.lands.filter(L => !L.skip[what]).map(L => L.id);
       const id = await this.ui.chooseLand({ ids, optional: true, title: `${label}が起きない土地を選んでください(${i + 1}/${n})` });
@@ -311,9 +339,9 @@ export class Game {
   }
   async dahanStrike(per, all) {
     const ids = this.lands.filter(L => L.dahan > 0 && this.invaderCount(L) > 0).map(L => L.id);
-    if (!ids.length) { this.log('ダハンと侵略者が同じ土地にいなかった'); return; }
+    if (!ids.length) { this.log('島の民と侵略者が同じ土地にいなかった'); return; }
     if (all) { for (const id of ids) { const L = this.land(id); await this.damage(L, L.dahan * per); } return; }
-    const id = await this.ui.chooseLand({ ids, title: 'ダハンが反撃する土地を選んでください' });
+    const id = await this.ui.chooseLand({ ids, title: '島の民が反撃する土地を選んでください' });
     const L = this.land(id);
     await this.damage(L, L.dahan * per);
   }
@@ -322,13 +350,13 @@ export class Game {
       if (L.dahan <= 0) continue;
       if (n >= 99) { L.skip.ravage = true; } else L.defend += n;
     }
-    this.log(n >= 99 ? 'ダハンのいる土地では荒らしが起きない' : `ダハンのいるすべての土地で防御${n}`);
+    this.log(n >= 99 ? '島の民のいる土地では襲撃が起きない' : `島の民のいるすべての土地で守り${n}`);
     this.update();
   }
   async defendChoice(n) {
     const ids = this.lands.filter(L => this.invaderCount(L) > 0).map(L => L.id);
     if (!ids.length) return;
-    const id = await this.ui.chooseLand({ ids, title: `防御${n}を得る土地を選んでください` });
+    const id = await this.ui.chooseLand({ ids, title: `守り${n}を得る土地を選んでください` });
     this.defend(this.land(id), n);
   }
   async downgrade(types, n) {
@@ -342,6 +370,7 @@ export class Game {
       let type = avail[0];
       if (avail.length > 1) type = await this.ui.chooseOption({ title: 'どれを置きかえますか?', options: avail.map(t => ({ label: PIECES[t], value: t })) });
       L[type]--;
+      this.fx('text', { land: L.id, text: type === 'cities' ? '都市→町' : '町→探検家', kind: 'good' });
       if (type === 'cities') { L.towns++; this.log(`${this.landName(L)}:都市を町に置きかえた`, 'good'); }
       else { L.explorers++; this.log(`${this.landName(L)}:町を探検家に置きかえた`, 'good'); }
       this.update();
@@ -441,25 +470,27 @@ export class Game {
   async addPresence(range) {
     const sp = this.spirit, def = sp.def;
     const opts = [];
-    if (sp.energyRevealed < def.energyTrack.length) opts.push({ label: `エネルギー欄から(毎ターンのエネルギーが ${def.energyTrack[sp.energyRevealed]} に)`, value: 'energy' });
-    if (sp.cardRevealed < def.cardTrack.length) opts.push({ label: `カード欄から(使えるカードが ${def.cardTrack[sp.cardRevealed]} 枚に)`, value: 'card' });
-    if (!opts.length) { this.log('置ける存在が残っていない'); return; }
-    const track = await this.ui.chooseOption({ title: `存在を追加(範囲${range}):どちらの欄から存在を取りますか?`, options: opts });
+    if (sp.energyRevealed < def.energyTrack.length) opts.push({ label: `エネルギーの列から(毎ターンのエネルギーが ${def.energyTrack[sp.energyRevealed]} に)`, value: 'energy' });
+    if (sp.cardRevealed < def.cardTrack.length) opts.push({ label: `カードの列から(使えるカードが ${def.cardTrack[sp.cardRevealed]} 枚に)`, value: 'card' });
+    if (!opts.length) { this.log('置ける灯りが残っていない'); return; }
+    const track = await this.ui.chooseOption({ title: `灯りを置く(距離${range}):どちらの列から灯りを取りますか?取った場所の数字があらわれ、次のターンから使えます`, options: opts });
     const ids = this.landsInRange(range).map(L => L.id);
-    const id = await this.ui.chooseLand({ ids, title: `存在を置く土地を選んでください(今ある存在から範囲${range})` });
+    const id = await this.ui.chooseLand({ ids, title: `灯りを置く土地を選んでください(今ある灯りから距離${range})` });
     if (track === 'energy') sp.energyRevealed++; else sp.cardRevealed++;
     const L = this.land(id);
     L.presence++;
-    this.log(`${this.landName(L)}に存在を置いた`, 'good');
+    this.log(`${this.landName(L)}に灯りを置いた`, 'good');
+    this.fx('text', { land: L.id, text: '灯りがともった', kind: 'spirit' });
     this.update();
+    await this.ui.pause(300);
   }
 
   async resolvePowers(speed) {
-    const label = speed === 'fast' ? '速いパワー' : '遅いパワー';
+    const label = speed === 'fast' ? '先手パワー' : '後手パワー';
     this.setPhase(label);
     const pending = this.spirit.played.filter(c => c.speed === speed).map(c => ({ kind: 'card', card: c, name: c.name }));
     const inn = this.spirit.def.innate;
-    if (inn.speed === speed && this.innateLevels().some(Boolean)) pending.push({ kind: 'innate', name: `${inn.name}(固有パワー)`, card: inn });
+    if (inn.speed === speed && this.innateLevels().some(Boolean)) pending.push({ kind: 'innate', name: `${inn.name}(特技)`, card: inn });
     while (pending.length) {
       let idx = 0;
       if (pending.length > 1) {
@@ -476,24 +507,29 @@ export class Game {
   async usePower(p) {
     const c = p.card;
     const ids = this.landsInRange(c.range).filter(L => this.matchesTarget(L, c.target)).map(L => L.id);
-    if (!ids.length) { this.log(`「${p.name}」:範囲に対象の土地がないため使えなかった`); return; }
+    if (!ids.length) { this.log(`「${p.name}」:距離に対象の土地がないため使えなかった`); return; }
     const id = await this.ui.chooseLand({
       ids, optional: true, optionalLabel: '使わない',
-      title: `「${p.name}」の対象の土地を選んでください(範囲${c.range})`,
+      title: `「${p.name}」の対象の土地を選んでください(距離${c.range})`,
       card: p.kind === 'card' ? c : null,
     });
     if (id == null) { this.log(`「${p.name}」は使わなかった`); return; }
     const L = this.land(id);
     this.log(`「${p.name}」→ ${this.landName(L)}`, 'power');
     this.ui.flash([id], 'power');
-    if (p.kind === 'card') {
-      await c.effect(this, L, c);
-    } else {
-      const met = this.innateLevels();
-      for (let i = 0; i < c.levels.length; i++) if (met[i]) await c.levels[i].effect(this, L);
-    }
+    this.fx('power', { land: id, text: p.kind === 'card' ? c.name : c.name });
+    await this.ui.pause(450);
+    this.fxLand = L;
+    try {
+      if (p.kind === 'card') {
+        await c.effect(this, L, c);
+      } else {
+        const met = this.innateLevels();
+        for (let i = 0; i < c.levels.length; i++) if (met[i]) await c.levels[i].effect(this, L);
+      }
+    } finally { this.fxLand = null; }
     this.update();
-    await this.ui.pause(250);
+    await this.ui.pause(600);
   }
 
   async invaderPhase() {
@@ -502,6 +538,7 @@ export class Game {
       const card = this.fear.earned.shift();
       const tl = this.fear.terror;
       await this.ui.showFear(card, tl);
+      this.fx('flash', { kind: 'fear' });
       this.log(`恐怖カード「${card.name}」(レベル${tl}):${card.levels[tl - 1].text}`, 'fear');
       await card.levels[tl - 1].effect(this);
       this.fear.resolved.push(card);
@@ -509,12 +546,16 @@ export class Game {
     }
 
     if (this.invader.ravage) {
-      this.setPhase(`侵略者:荒らし(${invaderCardName(this.invader.ravage)})`);
+      this.setPhase(`侵略者:襲撃(${invaderCardName(this.invader.ravage)})`);
+      this.fx('banner', { text: '襲撃', sub: `${invaderCardName(this.invader.ravage)}の土地`, kind: 'ravage' });
+      await this.ui.pause(700);
       const targets = this.lands.filter(L => this.cardMatches(this.invader.ravage, L));
       for (const L of targets) await this.ravage(L);
     }
     if (this.invader.build) {
       this.setPhase(`侵略者:建設(${invaderCardName(this.invader.build)})`);
+      this.fx('banner', { text: '建設', sub: `${invaderCardName(this.invader.build)}の土地`, kind: 'build' });
+      await this.ui.pause(700);
       const targets = this.lands.filter(L => this.cardMatches(this.invader.build, L));
       for (const L of targets) await this.build(L);
     }
@@ -529,31 +570,49 @@ export class Game {
     const n = this.invaderCount(L);
     if (!n) return;
     this.ui.flash([L.id], 'ravage');
-    if (L.skip.ravage) { this.log(`${this.landName(L)}:荒らしは起きなかった`, 'good'); await this.ui.pause(350); return; }
+    if (L.skip.ravage) {
+      this.log(`${this.landName(L)}:襲撃は起きなかった(封じられていた)`, 'good');
+      this.fx('text', { land: L.id, text: '襲撃を防いだ', kind: 'calm' });
+      await this.ui.pause(600); return;
+    }
     const raw = L.explorers + L.towns * 2 + L.cities * 3;
     const dmg = Math.max(0, raw - L.defend);
-    this.log(`${this.landName(L)}:荒らし!侵略者のダメージ ${dmg}${L.defend ? `(防御で${Math.min(raw, L.defend)}減った)` : ''}`, 'bad');
-    await this.ui.pause(450);
-    if (dmg >= 2) await this.addBlight(L);
+    const calc = [L.explorers && `探検家${L.explorers}×1`, L.towns && `町${L.towns}×2`, L.cities && `都市${L.cities}×3`].filter(Boolean).join('+');
+    this.log(`${this.landName(L)}:襲撃!ダメージ ${dmg}(${calc}${L.defend ? ` − 守り${Math.min(raw, L.defend)}` : ''})`, 'bad');
+    this.fx('ravage', { land: L.id, amount: dmg });
+    await this.ui.pause(700);
+    if (dmg >= 2) {
+      this.log(`ダメージが2以上なので、${this.landName(L)}に荒れ地が置かれる`, 'bad');
+      await this.addBlight(L);
+      await this.ui.pause(400);
+    } else this.log(`ダメージが2未満なので、荒れ地は置かれない`);
     const dead = Math.min(L.dahan, Math.floor(dmg / 2));
-    if (dead) this.destroy(L, 'dahan', dead);
+    if (dead) { this.destroy(L, 'dahan', dead); await this.ui.pause(400); }
     if (L.dahan > 0) {
       const hit = this.diff.dahanHit || 2;
-      this.log(`${this.landName(L)}:生き残ったダハン${L.dahan}人が反撃(${L.dahan * hit}ダメージ)`, 'good');
+      this.log(`${this.landName(L)}:生き残った島の民${L.dahan}人が反撃(1人${hit}ダメージ、合計${L.dahan * hit})`, 'good');
+      this.fx('counter', { land: L.id, text: `島の民の反撃 ${L.dahan * hit}` });
+      await this.ui.pause(500);
+      this.fxLand = L;
       await this.damage(L, L.dahan * hit);
+      this.fxLand = null;
     }
     this.update();
-    await this.ui.pause(300);
+    await this.ui.pause(500);
   }
 
   async build(L) {
     if (this.invaderCount(L) === 0) return;
     this.ui.flash([L.id], 'build');
-    if (L.skip.build) { this.log(`${this.landName(L)}:建設は起きなかった`, 'good'); L.skip.build = false; await this.ui.pause(300); return; }
-    if (L.towns > L.cities) { L.cities++; this.log(`${this.landName(L)}:都市が建った`, 'bad'); }
-    else { L.towns++; this.log(`${this.landName(L)}:町が建った`, 'bad'); }
+    if (L.skip.build) {
+      this.log(`${this.landName(L)}:建設は起きなかった(封じられていた)`, 'good'); L.skip.build = false;
+      this.fx('text', { land: L.id, text: '建設を防いだ', kind: 'calm' });
+      await this.ui.pause(600); return;
+    }
+    if (L.towns > L.cities) { L.cities++; this.log(`${this.landName(L)}:都市が建った(町が都市より多いため)`, 'bad'); this.fx('build', { land: L.id, text: '都市が建った' }); }
+    else { L.towns++; this.log(`${this.landName(L)}:町が建った`, 'bad'); this.fx('build', { land: L.id, text: '町が建った' }); }
     this.update();
-    await this.ui.pause(400);
+    await this.ui.pause(700);
   }
 
   async exploreStep() {
@@ -566,11 +625,21 @@ export class Game {
       L.adj.some(id => this.land(id).towns + this.land(id).cities > 0));
     this.update();
     this.ui.flash(targets.map(L => L.id), 'explore');
-    await this.ui.pause(350);
+    this.fx('banner', { text: '探検', sub: `${invaderCardName(card)}の土地`, kind: 'explore' });
+    await this.ui.pause(700);
+    for (const L of targets) if (!ok.includes(L)) this.log(`${this.landName(L)}:探検家は来なかった(海に面しておらず、近くに町・都市もないため)`);
     for (const L of ok) {
-      if (L.skip.explore) { this.log(`${this.landName(L)}:探検は起きなかった`, 'good'); L.skip.explore = false; continue; }
+      if (L.skip.explore) {
+        this.log(`${this.landName(L)}:探検は起きなかった(封じられていた)`, 'good'); L.skip.explore = false;
+        this.fx('text', { land: L.id, text: '探検を防いだ', kind: 'calm' });
+        continue;
+      }
+      const why = L.coastal ? '海に面しているため' : L.towns + L.cities > 0 ? 'この土地に町・都市があるため' : 'となりに町・都市があるため';
+      this.fx('explore', { land: L.id });
       L.explorers++;
-      this.log(`${this.landName(L)}:探検家がやってきた`, 'bad');
+      this.log(`${this.landName(L)}:探検家がやってきた(${why})`, 'bad');
+      this.update();
+      await this.ui.pause(350);
     }
     if (!ok.length) this.log('探検できる土地がなかった');
     this.update();

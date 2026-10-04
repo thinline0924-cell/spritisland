@@ -1,4 +1,5 @@
 // 画面(パネル・手札・案内・ダイアログ)。ゲームからの問い合わせに答える役目。
+import { GLOSSARY, GUIDE } from './glossary.js';
 import { ELEMENTS, ELEMENT_KEYS, TERRAIN, PIECES, targetLabel, invaderCardName, DIFFICULTY } from './data.js';
 
 const $ = s => document.querySelector(s);
@@ -8,23 +9,30 @@ export function elChips(list, cls = '') {
   return list.map(e => `<i class="el ${cls}" style="--c:${ELEMENTS[e].color}" title="${ELEMENTS[e].label}">${ELEMENTS[e].ch}</i>`).join('');
 }
 
+// 説明文の中の用語を、タップで用語集が開く印にする
+const TERM_WORDS = ['ダメージ', '恐怖', '追い払う', '呼び寄せる', '守り', '荒れ地', '島の民', '探検家', '町', '都市', '破壊', '取り除く', '襲撃', '建設', '探検', '灯り', 'エネルギー'];
+const TERM_RE = new RegExp(`(${TERM_WORDS.join('|')})`, 'g');
+export function termify(text) {
+  return esc(text).replace(TERM_RE, w => `<span class="term" data-term="${w}">${w}</span>`);
+}
+
 export function cardHTML(c, extra = '') {
-  const speed = c.speed === 'fast' ? '<span class="spd fast">速</span>' : '<span class="spd slow">遅</span>';
+  const speed = c.speed === 'fast' ? '<span class="spd fast" title="先手:侵略者が動く前に使う">先</span>' : '<span class="spd slow" title="後手:侵略者が動いたあとに使う">後</span>';
   return `<div class="card ${c.speed} ${extra}" data-id="${esc(c.id)}">
     <div class="c-top"><span class="cost" title="エネルギーのコスト">${c.cost}</span>${speed}</div>
     <div class="c-name">${esc(c.name)}</div>
-    <div class="c-meta">範囲${c.range}・${esc(targetLabel(c.target))}</div>
-    <div class="c-text">${esc(c.text)}</div>
+    <div class="c-meta"><span class="term" data-term="距離">距離${c.range}</span>・${esc(targetLabel(c.target))}</div>
+    <div class="c-text">${termify(c.text)}</div>
     <div class="c-el">${elChips(c.el)}</div>
   </div>`;
 }
 
 function invChip(card, label) {
-  if (!card) return `<div class="inv-slot"><small>${label}</small><span class="inv-card empty">—</span></div>`;
+  if (!card) return `<div class="inv-slot"><small class="term" data-term="${label}">${label}</small><span class="inv-card empty">—</span></div>`;
   const parts = card.coastal
     ? `<span class="tchip coast">沿岸</span>`
     : card.terrains.map(t => `<span class="tchip" style="--c:${TERRAIN[t].color}">${TERRAIN[t].name}</span>`).join('');
-  return `<div class="inv-slot"><small>${label}</small><span class="inv-card">${parts}</span></div>`;
+  return `<div class="inv-slot"><small class="term" data-term="${label}">${label}</small><span class="inv-card">${parts}</span></div>`;
 }
 
 export class UI {
@@ -35,6 +43,8 @@ export class UI {
     this.selecting = null;
     this.logLines = [];
     this.updateQueued = false;
+    this.speedMul = 1;
+    try { if (localStorage.getItem('spirit-fast') === '1') this.speedMul = 0.5; } catch (e) { /* 無視 */ }
 
     board3d.onLandClick = id => this.landClicked(id);
     board3d.onLandHover = (id, x, y) => this.hoverLand(id, x, y);
@@ -51,10 +61,24 @@ export class UI {
       $('#menu').classList.add('hidden');
       if (act === 'rules') this.showRules();
       if (act === 'log') $('#log').classList.toggle('hidden');
+      if (act === 'glossary') this.showGlossary();
+      if (act === 'sound') { this.b3.fx.sound.setOn(!this.b3.fx.sound.on); this.syncMenu(); }
+      if (act === 'speed') {
+        this.speedMul = this.speedMul === 1 ? 0.5 : 1;
+        try { localStorage.setItem('spirit-fast', this.speedMul < 1 ? '1' : '0'); } catch (e) { /* 無視 */ }
+        this.syncMenu();
+      }
       if (act === 'view') this.b3.resetView();
       if (act === 'new' && this.onNewGame) this.confirmNew();
     });
     $('#log-close').addEventListener('click', () => $('#log').classList.add('hidden'));
+    $('#menu').insertAdjacentHTML('beforeend', '<button data-act="speed" id="speed-btn"></button>');
+    this.syncMenu();
+    // カードの中の用語にカーソルを合わせると説明が出る
+    document.addEventListener('click', e => {
+      const term = e.target.closest('.term');
+      if (term && !this.selecting && !term.closest('.pick')) { e.stopPropagation(); this.showGlossary(term.dataset.term); }
+    }, true);
     $('#hand').addEventListener('click', e => {
       const el = e.target.closest('.card');
       if (el && this.selecting) this.toggleCard(el.dataset.id);
@@ -74,13 +98,21 @@ export class UI {
       showFear: (c, tl) => ok() ? this.showFear(c, tl) : never(),
       notice: (t, x) => ok() ? this.notice(t, x) : never(),
       flash: (ids, k) => ok() && this.b3.flash(ids, k),
-      pause: ms => ok() ? new Promise(r => setTimeout(r, ms)) : never(),
+      pause: ms => ok() ? new Promise(r => setTimeout(r, ms * this.speedMul)) : never(),
       gameOver: (w, r, g) => ok() && this.gameOver(w, r, g),
+      fx: (k, d) => ok() && this.b3.fx.handle(k, d),
     };
+  }
+
+  syncMenu() {
+    $('#sound-btn').textContent = `効果音:${this.b3.fx.sound.on ? 'オン' : 'オフ'}`;
+    $('#speed-btn').textContent = `演出の速さ:${this.speedMul < 1 ? 'はやい' : 'ふつう'}`;
   }
 
   setGame(game) {
     this.game = game;
+    this.b3.lastPos = null;
+    this.b3.anims.clear();
     document.body.classList.add('ingame');
     this.pending = null;
     this.selecting = null;
@@ -144,33 +176,37 @@ export class UI {
         <div class="big"><small>エネルギー</small><b>${sp.energy}</b><small>毎ターン +${g.energyGain()}</small></div>
         <div class="big"><small>使えるカード</small><b>${g.cardPlays()}</b><small>枚 / ターン</small></div>
       </div>
-      <div class="track"><small>エネルギー欄</small><div>${track(def.energyTrack, sp.energyRevealed, 'エネルギー')}</div></div>
-      <div class="track"><small>カード欄</small><div>${track(def.cardTrack, sp.cardRevealed, '枚')}</div></div>
-      <div class="els"><small>このターンの元素</small><div>${ELEMENT_KEYS.map(k =>
+      <div class="track"><small class="term" data-term="エネルギーの列・カードの列">エネルギーの列(毎ターンもらえる量)</small><div>${track(def.energyTrack, sp.energyRevealed, 'エネルギー')}</div></div>
+      <div class="track"><small class="term" data-term="エネルギーの列・カードの列">カードの列(1ターンに使える枚数)</small><div>${track(def.cardTrack, sp.cardRevealed, '枚')}</div></div>
+      <div class="els"><small class="term" data-term="元素">このターンの元素(使ったカードの合計)</small><div>${ELEMENT_KEYS.map(k =>
         `<i class="el ${el[k] ? '' : 'off'}" style="--c:${ELEMENTS[k].color}" title="${ELEMENTS[k].label}">${ELEMENTS[k].ch}<sub>${el[k] || ''}</sub></i>`).join('')}</div></div>
       <div class="innate">
-        <div class="inn-head">${esc(inn.name)} <span class="spd ${inn.speed}">${inn.speed === 'fast' ? '速' : '遅'}</span><small>固有パワー・範囲${inn.range}・${esc(targetLabel(inn.target))}</small></div>
+        <div class="inn-head">${esc(inn.name)} <span class="spd ${inn.speed}">${inn.speed === 'fast' ? '先' : '後'}</span><small><span class="term" data-term="特技">特技</span>・距離${inn.range}・${esc(targetLabel(inn.target))}</small></div>
         ${inn.levels.map((lv, i) => `<div class="inn-lv ${met[i] ? 'met' : ''}"><span class="need">${Object.entries(lv.need).map(([k, v]) =>
           `<i class="el" style="--c:${ELEMENTS[k].color}">${ELEMENTS[k].ch}<sub>${v}</sub></i>`).join('')}</span><span>${esc(lv.text)}</span></div>`).join('')}
       </div>
-      <div class="pres-count">島にある存在:${g.totalPresence()}</div>`;
+      <div class="pres-count">島にある灯り:${g.totalPresence()}</div>`;
   }
 
   renderIsland(g) {
     const f = g.fear;
     const dots = Array.from({ length: f.perCard }, (_, i) => `<i class="fdot ${i < f.pool ? 'on' : ''}"></i>`).join('');
     const tlText = ['', '侵略者を島からすべて追い出す', '町と都市をすべてなくす', '都市をすべてなくす'][f.terror];
+    const cnt = k => g.lands.reduce((t, L) => t + L[k], 0);
+    const goalLeft = f.terror === 1 ? `あと 侵略者${cnt('explorers') + cnt('towns') + cnt('cities')}`
+      : f.terror === 2 ? `あと 町${cnt('towns')}・都市${cnt('cities')}` : `あと 都市${cnt('cities')}`;
     const inv = g.invader;
     const next = inv.deck[0];
     $('#island-body').innerHTML = `
-      <div class="row"><small>恐怖</small><span class="fdots">${dots}</span><span class="num">${f.pool}/${f.perCard}</span></div>
+      <div class="row"><small class="term" data-term="恐怖">恐怖</small><span class="fdots">${dots}</span><span class="num">${f.pool}/${f.perCard}</span></div>
       <div class="row sub"><small>恐怖カード</small><span>獲得 ${9 - f.deck.length}/9${f.earned.length ? `(<b class="warn">未発動 ${f.earned.length}</b>)` : ''}</span></div>
-      <div class="row"><small>恐怖レベル</small><span class="tl">${'Ⅰ Ⅱ Ⅲ'.split(' ')[f.terror - 1]}</span></div>
-      <div class="goal">勝利条件:${tlText}</div>
-      <div class="row"><small>荒廃</small><span class="blight">${'◆'.repeat(Math.min(g.blight.pool, 12))}</span><span class="num">${g.blight.pool}</span></div>
+      <div class="row"><small class="term" data-term="恐怖レベル">恐怖レベル</small><span class="tl">${'Ⅰ Ⅱ Ⅲ'.split(' ')[f.terror - 1]}</span></div>
+      <div class="goal"><span class="term" data-term="勝利条件">勝利条件</span>:${tlText}<br><b class="left">${goalLeft}</b></div>
+      <div class="row"><small class="term" data-term="荒れ地">荒れ地</small><span class="blight">${'◆'.repeat(Math.min(g.blight.pool, 12))}</span><span class="num">残り${g.blight.pool}</span></div>
       ${g.blight.flipped ? '<div class="goal bad">島は荒れ果てた:尽きたら負け</div>' : ''}
-      <div class="inv">${invChip(inv.ravage, '荒らし')}${invChip(inv.build, '建設')}${invChip(inv.explore, '探検')}</div>
-      <div class="row sub"><small>侵略者デッキ</small><span>残り ${inv.deck.length} 枚${next ? `(次はステージ${next.stage})` : '(最後の探検が終わった)'}</span></div>`;
+      <div class="inv">${invChip(inv.ravage, '襲撃')}${invChip(inv.build, '建設')}${invChip(inv.explore, '探検')}</div>
+      <div class="inv-note">←毎ターン左へ進む。「建設」の地形は次のターンに襲撃される</div>
+      <div class="row sub"><small class="term" data-term="侵略者カード">侵略者カード</small><span>残り ${inv.deck.length} 枚${next ? `(次はステージ${next.stage})` : '(最後の探検が終わった)'}</span></div>`;
   }
 
   renderHand(g) {
@@ -198,8 +234,8 @@ export class UI {
     const rows = [['explorers', L.explorers], ['towns', L.towns], ['cities', L.cities], ['dahan', L.dahan], ['blight', L.blight], ['presence', L.presence]]
       .filter(([, n]) => n > 0).map(([k, n]) => `<span>${PIECES[k]} ${n}</span>`).join('');
     const flags = [];
-    if (L.defend) flags.push(`防御${L.defend}`);
-    if (L.skip.ravage) flags.push('荒らし無し');
+    if (L.defend) flags.push(`守り${L.defend}`);
+    if (L.skip.ravage) flags.push('襲撃無し');
     if (L.skip.build) flags.push('次の建設無し');
     if (L.skip.explore) flags.push('次の探検無し');
     tip.innerHTML = `<b>土地${L.num} ${TERRAIN[L.terrain].name}</b>${L.coastal ? '<em>沿岸</em>' : '<em>内陸</em>'}
@@ -339,6 +375,7 @@ export class UI {
   }
 
   gameOver(win, reason, g) {
+    this.b3.fx.sound.play(win ? 'win' : 'lose');
     this.hidePrompt();
     this.selecting = null;
     const box = this.openModal(`<div class="end ${win ? 'win' : 'lose'}">
@@ -374,7 +411,7 @@ export class UI {
       <h3>精霊を選ぶ</h3>
       <div class="spirit-pick">${spirits.map(s => `<button class="sp ${s.id === spirit ? 'on' : ''}" data-id="${s.id}">
         <i class="dot" style="--c:${s.color}"></i><b>${esc(s.name)}</b><span>${esc(s.blurb)}</span>
-        <small>固有パワー:${esc(s.innate.name)}</small></button>`).join('')}</div>
+        <small>特技:${esc(s.innate.name)}</small></button>`).join('')}</div>
       <h3>難易度</h3>
       <div class="diff-pick">${Object.entries(DIFFICULTY).map(([k, d]) => `<button class="df ${k === diff ? 'on' : ''}" data-k="${k}"><b>${d.label}</b><small>${esc(d.note)}</small></button>`).join('')}</div>
       <div class="actions"><button class="btn ghost" id="rules">遊び方を読む</button><button class="btn primary" id="go">はじめる</button></div>
@@ -389,46 +426,42 @@ export class UI {
     box.querySelector('#go').addEventListener('click', () => { this.closeModal(); onStart({ spirit, difficulty: diff }); });
   }
 
-  showRules() {
+  showRules(tab = 'basics', focus = null) {
+    const tabs = [['basics', 'はじめに'], ['turn', 'ターンの流れ'], ['invaders', '侵略者の動き'], ['win', '勝ち負け'], ['glossary', '用語集']];
+    const glossary = GLOSSARY.map(g => `<h3>${esc(g.group)}</h3><dl class="gloss">${g.items.map(it =>
+      `<div class="gl-item" data-term="${esc(it.term)}"><dt>${esc(it.term)}</dt><dd>${esc(it.desc)}${it.rule ? `<p class="gl-rule"><b>くわしく</b>${termify(it.rule)}</p>` : ''}</dd></div>`).join('')}</dl>`).join('');
     const box = this.openModal(`<div class="rules">
-      <h2>遊び方</h2>
-      <p>あなたは島に宿る<b>精霊</b>です。島の人々<b>ダハン</b>と力を合わせ、海から来る<b>侵略者</b>(探検家・町・都市)を追い払いましょう。</p>
-      <h3>勝ち・負け</h3>
-      <ul>
-        <li><b>勝ち</b>:侵略者を怖がらせて<b>恐怖カードを9枚</b>集める。または、恐怖レベルごとの勝利条件(Ⅰ:侵略者全滅/Ⅱ:町と都市が無い/Ⅲ:都市が無い)を満たす。</li>
-        <li><b>負け</b>:荒廃が尽きる/島から精霊の存在がすべて消える/侵略者カードが尽きる(時間切れ)。</li>
-      </ul>
-      <h3>1ターンの流れ</h3>
-      <ol>
-        <li><b>成長</b>:3つの中から1つ選ぶ。存在を島に置くと、欄の下の数字があらわれ、エネルギーや使えるカードの数が増える。</li>
-        <li><b>エネルギーを得てカードを選ぶ</b>:コストを払って手札からパワーカードを使う。</li>
-        <li><b>速いパワー</b>(速)を使う。</li>
-        <li><b>侵略者フェイズ</b>:恐怖カードの効果 → <b>荒らし</b> → <b>建設</b> → <b>探検</b>。カードは毎ターン「探検→建設→荒らし」の順に右から左へ進む。</li>
-        <li><b>遅いパワー</b>(遅)を使う。使ったカードは捨て札に。</li>
-      </ol>
-      <h3>侵略者の動き</h3>
-      <ul>
-        <li><b>探検</b>:カードの地形の土地のうち、沿岸か、町・都市がある(となりにある)土地に探検家が来る。</li>
-        <li><b>建設</b>:侵略者がいる土地に町(町が都市より多ければ都市)が建つ。</li>
-        <li><b>荒らし</b>:探検家1・町2・都市3のダメージ。2以上で<b>荒廃</b>が置かれ、ダハンも傷つく(2ダメージで1人)。生き残ったダハンは1人2ダメージ(やさしいでは3)で反撃する。荒廃がすでにある土地に荒廃が置かれると、となりに広がる。</li>
-      </ul>
-      <h3>パワーの言葉</h3>
-      <ul>
-        <li><b>範囲</b>:自分の存在がある土地からの距離。範囲0は存在がある土地。</li>
-        <li><b>ダメージ</b>:探検家1・町2・都市3で破壊。町を壊すと恐怖1、都市は恐怖2。</li>
-        <li><b>押し出す</b>:となりの土地へ動かす。<b>集める</b>:となりの土地から連れてくる。</li>
-        <li><b>防御</b>:このターンの荒らしのダメージを減らす。</li>
-        <li><b>元素</b>:使ったカードの元素がそろうと、固有パワーが自動で強くなる。</li>
-      </ul>
-      <h3>操作</h3>
-      <ul>
-        <li>ドラッグで回転、ホイール/ピンチで拡大、右ドラッグ(2本指)で移動。</li>
-        <li>土地にカーソルを合わせると、駒の数が見られる。右上の丸いボタンでメニュー。</li>
-      </ul>
+      <h2>遊び方と用語集</h2>
+      <div class="tabs">${tabs.map(([k, l]) => `<button class="tab ${k === tab ? 'on' : ''}" data-tab="${k}">${l}</button>`).join('')}</div>
+      ${tabs.map(([k]) => `<section class="tab-body ${k === tab ? '' : 'hidden'}" data-body="${k}">${k === 'glossary' ? glossary : GUIDE[k]}</section>`).join('')}
       <p class="note">このゲームはボードゲーム「スピリット・アイランド」を題材にしたファンメイドの一人用アレンジです。カードや数値は独自に簡略化しています。</p>
       </div><div class="actions"><button class="btn primary" id="close">閉じる</button></div>`, 'sheet');
+    const show = k => {
+      box.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === k));
+      box.querySelectorAll('.tab-body').forEach(b => b.classList.toggle('hidden', b.dataset.body !== k));
+    };
+    box.querySelectorAll('.tab').forEach(b => b.addEventListener('click', () => { show(b.dataset.tab); box.scrollTop = 0; }));
+    // 説明の中の用語をタップすると用語集のその項目へ
+    box.addEventListener('click', e => {
+      const t = e.target.closest('.term');
+      if (!t) return;
+      e.stopPropagation();
+      show('glossary');
+      this.focusTerm(box, t.dataset.term);
+    });
     box.querySelector('#close').addEventListener('click', () => this.closeModal('sheet'));
+    if (focus) this.focusTerm(box, focus);
   }
+
+  focusTerm(box, term) {
+    const el = box.querySelector(`.gl-item[data-term="${term}"]`);
+    if (!el) return;
+    box.querySelectorAll('.gl-item.hl').forEach(x => x.classList.remove('hl'));
+    el.classList.add('hl');
+    requestAnimationFrame(() => el.scrollIntoView({ block: 'center' }));
+  }
+
+  showGlossary(term = null) { this.showRules('glossary', term); }
 }
 
 export { invaderCardName };

@@ -102,7 +102,7 @@ small { color: var(--ink-faint); font-size: 11px; }
 .fdots { display: flex; gap: 3px; }
 .fdot { width: 12px; height: 12px; border: 1px solid var(--fear); transform: rotate(45deg) scale(0.8); }
 .fdot.on { background: var(--fear); box-shadow: 0 0 6px var(--fear); }
-.num { margin-left: auto; color: var(--ink-dim); font-size: 12px; }
+.num { margin-left: auto; color: var(--ink-dim); font-size: 12px; white-space: nowrap; }
 .tl { font-size: 18px; color: var(--fear); }
 .goal { font-size: 12px; color: var(--ink-dim); padding: 4px 6px; background: rgba(255, 255, 255, 0.04); margin-bottom: 6px; }
 .goal.bad { color: var(--bad); }
@@ -167,7 +167,7 @@ li.bad, .toast-line.bad { color: var(--bad); }
 li.good, .toast-line.good { color: var(--good); }
 li.fear, .toast-line.fear { color: var(--fear); }
 li.power, .toast-line.power { color: var(--accent); }
-#toast { position: fixed; left: 12px; bottom: 236px; z-index: 7; display: flex; flex-direction: column; gap: 3px; pointer-events: none; max-width: 360px; }
+#toast { position: fixed; left: 12px; bottom: 340px; z-index: 7; display: flex; flex-direction: column; gap: 3px; pointer-events: none; max-width: 300px; }
 .toast-line { font-size: 12px; padding: 3px 8px; background: rgba(20, 22, 42, 0.7); border-left: 2px solid currentColor; color: var(--ink-dim); transition: opacity .8s; }
 .toast-line.fade { opacity: 0; }
 
@@ -244,3 +244,61 @@ li.power, .toast-line.power { color: var(--accent); }
   .start .logo h1 { font-size: 30px; }
   .overlay > .panel { padding: 16px; }
 }
+
+/* ---------- 演出 ---------- */
+#fx-layer { position: fixed; inset: 0; pointer-events: none; overflow: hidden; z-index: 4; }
+.fx-text { position: absolute; left: 0; top: 0; white-space: nowrap; font-size: 15px; padding: 2px 8px; color: #fff; text-shadow: 0 0 4px #000, 0 0 10px rgba(0,0,0,.7); opacity: 0; animation: fxText 2.2s steps(22) forwards; }
+.fx-text.dmg { color: #ffd08a; font-size: 18px; }
+.fx-text.bad { color: #ff9a8a; }
+.fx-text.good { color: #b8f0c8; }
+.fx-text.fear { color: #e2b8ff; }
+.fx-text.blight { color: #d098ff; }
+.fx-text.calm { color: #bfe6ff; }
+.fx-text.spirit { color: #e6f6ff; font-size: 16px; background: rgba(40, 60, 100, .45); border: 1px solid rgba(190, 230, 255, .5); }
+@keyframes fxText { 0% { opacity: 0; } 4% { opacity: 1; } 75% { opacity: 1; } 100% { opacity: 0; } }
+
+#screen-flash { position: fixed; inset: 0; pointer-events: none; z-index: 3; opacity: 0; }
+#screen-flash.on { animation: flash .7s ease-out; }
+#screen-flash.ravage { background: radial-gradient(circle, rgba(255,60,40,0) 30%, rgba(255,60,40,.45)); }
+#screen-flash.fear { background: radial-gradient(circle, rgba(190,120,255,0) 30%, rgba(190,120,255,.45)); }
+#screen-flash.blight { background: radial-gradient(circle, rgba(120,40,160,0) 40%, rgba(120,40,160,.35)); }
+@keyframes flash { 0% { opacity: 1; } 100% { opacity: 0; } }
+
+#banner { position: fixed; left: 0; right: 0; top: 30%; z-index: 12; pointer-events: none; display: flex; flex-direction: column; align-items: center; opacity: 0; }
+#banner b { font-weight: normal; font-size: 44px; letter-spacing: .5em; padding: 6px 0 6px .5em; text-shadow: 0 0 18px currentColor, 0 2px 0 #000; }
+#banner small { font-size: 14px; color: var(--ink); letter-spacing: .2em; margin-top: 2px; text-shadow: 0 0 6px #000; }
+#banner::before { content: ''; position: absolute; left: 0; right: 0; top: 50%; height: 84px; transform: translateY(-50%); background: linear-gradient(90deg, transparent, rgba(16,16,36,.75) 25%, rgba(16,16,36,.75) 75%, transparent); z-index: -1; }
+#banner.show { animation: banner 1.6s ease-out forwards; }
+#banner.ravage b { color: #ff7a66; }
+#banner.build b { color: #ffb070; }
+#banner.explore b { color: #ffe08a; }
+#banner.fear b { color: #e0b0ff; }
+#banner.bad b { color: #ff8a7a; }
+@keyframes banner { 0% { opacity: 0; transform: translateX(-40px); } 15% { opacity: 1; transform: none; } 75% { opacity: 1; } 100% { opacity: 0; transform: translateX(40px); } }
+.panel.pulse { animation: panelPulse .8s ease-out; }
+@keyframes panelPulse { 0% { box-shadow: 0 0 0 2px rgba(217,168,255,.9), 0 0 24px rgba(217,168,255,.6); } 100% { box-shadow: none; } }
+@media (max-width: 820px) { #banner b { font-size: 30px; } .fx-text { font-size: 12px; } .fx-text.dmg { font-size: 14px; } }
+@media (prefers-reduced-motion: reduce) { #banner.show { animation-duration: 1.2s; } }
+
+/* ---------- 用語・説明書 ---------- */
+.term { text-decoration: underline dotted rgba(214, 204, 240, 0.55); text-underline-offset: 3px; cursor: help; }
+.card .term { text-decoration-color: rgba(214, 204, 240, 0.35); }
+.goal .left { font-weight: normal; color: var(--accent); }
+.inv-note { font-size: 10.5px; color: var(--ink-faint); margin-bottom: 4px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--line); position: sticky; top: -20px; background: rgba(26, 28, 54, 0.98); padding-top: 4px; z-index: 1; }
+.tab { background: none; border: 1px solid transparent; border-bottom: none; padding: 8px 12px; cursor: pointer; color: var(--ink-dim); font-size: 14px; }
+.tab.on { color: var(--ink); border-color: var(--line); background: rgba(255, 255, 255, 0.06); }
+.guide-box { border: 1px solid var(--line); background: rgba(185, 214, 255, 0.06); padding: 10px 14px; margin: 12px 0; }
+.guide-box p, .guide-box ol { margin: 6px 0 0; }
+.steps li { margin-bottom: 4px; }
+.tl-table { border-collapse: collapse; margin: 8px 0; font-size: 13px; width: 100%; }
+.tl-table th, .tl-table td { border: 1px solid var(--line); padding: 5px 8px; text-align: left; }
+.tl-table th { font-weight: normal; color: var(--ink-dim); background: rgba(255, 255, 255, 0.04); }
+.gloss { margin: 0; }
+.gl-item { display: grid; grid-template-columns: 9em 1fr; gap: 10px; padding: 8px 6px; border-top: 1px dashed rgba(214, 204, 240, 0.15); }
+.gl-item dt { color: var(--accent); }
+.gl-item dd { margin: 0; font-size: 13.5px; line-height: 1.7; }
+.gl-rule { margin: 4px 0 0 !important; font-size: 12.5px; color: var(--ink-dim); line-height: 1.7 !important; }
+.gl-rule b { font-weight: normal; font-size: 11px; color: #1c1f3c; background: var(--ink-dim); padding: 0 5px; margin-right: 6px; }
+.gl-item.hl { background: rgba(185, 214, 255, 0.12); box-shadow: inset 2px 0 0 var(--accent); }
+@media (max-width: 820px) { .gl-item { grid-template-columns: 1fr; gap: 2px; } .tab { padding: 6px 8px; font-size: 13px; } .tabs { top: -16px; } }
