@@ -4,7 +4,21 @@
 あなたは島に宿る精霊となり、島の人々(ダハン)と力を合わせて、海の向こうから来る侵略者を追い払います。
 島はドット絵風の 3DCG で描かれ、回したり拡大したりしながら遊べます。
 
-## 遊び方(いちばんかんたんな方法:GitHub Pages で公開)
+## Render で公開して遊ぶ(おすすめ)
+
+このゲームは HTML・CSS・JavaScript だけでできているので、Render の **静的サイト(Static Site)** として無料で公開できます。
+APIキーなどの設定は要りません。設定は `render.yaml` に書いてあります。
+
+1. https://dashboard.render.com を開いてログインする
+2. 右上の **New +** → **Blueprint** を選ぶ
+3. リポジトリの一覧から **thinline0924-cell/spritisland** を選ぶ(出てこないときは「Configure account」で GitHub の許可にこのリポジトリを追加)
+4. 「spritisland」という Static Site が表示されるので、**Apply**(または Deploy Blueprint)を押す
+5. 1〜2分で公開が終わる。サービスの画面の上にある `https://spritisland-xxxx.onrender.com` のような URL を開くと遊べる
+
+GitHub の `main` に変更が入ると、Render が自動で公開し直します。
+静的サイトなので、Render の無料プランでありがちな「しばらく使わないと起動に時間がかかる」こともありません。
+
+## 別の方法:GitHub Pages で公開
 
 このゲームは HTML・CSS・JavaScript だけでできているので、インストールは不要です。
 
@@ -40,6 +54,7 @@
 | `js/game.js` | ルールの本体(ターンの流れ、荒らし・建設・探検、恐怖、荒廃、勝ち負け) |
 | `js/board3d.js` | three.js による 3D 表示(ブロックの島・水面の映りこみ・月・森・ほたる・駒) |
 | `js/ui.js` | パネル・手札・案内・ダイアログ |
+| `render.yaml` | Render で公開するための設定(静的サイト・無料) |
 | `lib/` | three.js(3D表示のライブラリ。MIT ライセンス)。ネットの外部サービスに頼らず動くよう同梱 |
 
 ## 注意
