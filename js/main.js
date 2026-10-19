@@ -3,13 +3,18 @@ const ACT = {
   home() { App.play = null; render(); },
   help() { App.help = true; render(); },
   closehelp() { App.help = false; render(); },
-  reset() {
-    if (!confirm('今のキャリアを消して、最初からやり直しますか?')) return;
-    clearSave(); G = null; App.help = false; App.play = null; App.newForm = null; render();
+
+  reset() { ask('今のキャリアを消して、最初からやり直しますか?', '消してやり直す', 'doreset'); },
+  doreset() {
+    clearSave(); G = null; App.ask = null; App.help = false; App.play = null; App.newForm = null; render();
   },
   continue() { G = loadGame(); render(); },
   newform() {
-    if (loadGame() && !confirm('保存されているキャリアは消えます。新しく始めますか?')) return;
+    if (loadGame()) return ask('保存されているキャリアは消えます。新しく始めますか?', '新しく始める', 'donewform');
+    ACT.donewform();
+  },
+  donewform() {
+    App.ask = null;
     App.newForm = { name: '', number: U.ri(2, 99), strength: 'pace' }; render();
   },
   cancelnew() { App.newForm = null; render(); },
@@ -30,7 +35,9 @@ const ACT = {
     startSeason(G.offers[Number(i)]);
     G.seasonEnd = null; saveGame(); window.scrollTo(0, 0); render();
   },
-  retire() { if (careerMustEnd() || confirm('ここで引退しますか?')) { retire(); window.scrollTo(0, 0); render(); } },
+  retire() { if (careerMustEnd()) ACT.doretire(); else ask('ここで引退しますか?', '引退する', 'doretire'); },
+  doretire() { App.ask = null; retire(); window.scrollTo(0, 0); render(); },
+  askno() { App.ask = null; render(); },
   weekend() { startWeekend(); window.scrollTo(0, 0); render(); },
   practice() { practiceRun(); render(); },
   qualify() { runQualifying(); window.scrollTo(0, 0); render(); },
@@ -77,7 +84,11 @@ document.addEventListener('change', e => {
     saveGame(); render();
   }
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && App.help) { App.help = false; render(); } });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (App.ask) { App.ask = null; render(); } else if (App.help) { App.help = false; render(); }
+});
+function ask(text, yes, act) { App.ask = { text, yes, act }; render(); }
 
 window.addEventListener('DOMContentLoaded', () => {
   App.el = document.getElementById('app');

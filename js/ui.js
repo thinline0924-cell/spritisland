@@ -52,7 +52,7 @@ function render() {
     else if (st === 'plan') body = planScreen();
     else body = App.play && App.play.live ? raceScreen() : resultScreen();
   } else body = hubScreen();
-  App.el.innerHTML = (G || App.newForm ? topbar() : '') + `<main class="main">${body}</main>` + (App.help ? helpOverlay() : '');
+  App.el.innerHTML = (G || App.newForm ? topbar() : '') + `<main class="main">${body}</main>` + (App.help ? helpOverlay() : '') + (App.ask ? askOverlay() : '');
   if (App.play && App.play.live && G && G.weekend && G.weekend.stage === 'race') startPlayback();
 }
 
@@ -171,6 +171,14 @@ function hubScreen() {
         ${statsBlock()}
       </section>
     </div>`;
+}
+
+function askOverlay() {
+  const a = App.ask;
+  return `<div class="overlay"><div class="sheet ask" role="alertdialog" aria-label="${U.esc(a.text)}">
+    <p class="ask-t">${U.esc(a.text)}</p>
+    <div class="row-end"><button class="btn ghost" data-act="askno">やめる</button><button class="btn primary" data-act="${a.act}">${U.esc(a.yes)}</button></div>
+  </div></div>`;
 }
 
 function helpOverlay() {

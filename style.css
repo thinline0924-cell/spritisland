@@ -17,7 +17,7 @@
   --jp: 'Zen Kaku Gothic New', 'Hiragino Sans', 'Yu Gothic', sans-serif;
 }
 * { box-sizing: border-box; }
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; color-scheme: light; background: var(--green); }
 body {
   margin: 0; background: var(--green); color: var(--ink);
   font-family: var(--jp); font-size: 15px; line-height: 1.6;
@@ -31,8 +31,10 @@ button:disabled { cursor: default; opacity: 0.4; }
 .topbar {
   display: flex; align-items: center; gap: 16px; padding: 0 20px; height: 52px;
   background: var(--green-d); border-bottom: 1px solid var(--line-w); color: var(--white);
-  position: sticky; top: 0; z-index: 10;
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
+  padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px));
 }
+body::before { content: ''; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--green-d); }
 .logo { background: none; border: 0; padding: 0; font-family: var(--cond); font-weight: 700; font-size: 22px; letter-spacing: 0.06em; color: var(--white); }
 .logo b { font-weight: 400; margin-left: 4px; opacity: 0.75; }
 .ctx { display: flex; gap: 14px; flex: 1; min-width: 0; font-family: var(--cond); font-size: 13px; letter-spacing: 0.08em; opacity: 0.85; white-space: nowrap; overflow: hidden; }
@@ -40,7 +42,7 @@ button:disabled { cursor: default; opacity: 0.4; }
 .tb-btn { background: none; border: 1px solid var(--line-w); color: var(--white); padding: 4px 12px; font-size: 13px; }
 .tb-btn:hover { background: var(--white); color: var(--green); }
 
-.main { max-width: 1160px; margin: 0 auto; padding: 24px 20px 64px; }
+.main { max-width: 1160px; margin: 0 auto; padding-block: 24px 64px; padding-left: max(20px, env(safe-area-inset-left, 0px)); padding-right: max(20px, env(safe-area-inset-right, 0px)); }
 
 /* ---- 表紙 ---- */
 .title { min-height: calc(100vh - 40px); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--white); padding: 24px 0; }
@@ -315,6 +317,9 @@ tr.me .dnf { color: var(--white); }
 .sheet { background: var(--paper); border: 1px solid var(--ink); max-width: 640px; width: 100%; padding: 20px 22px; }
 .help { padding-left: 1.2em; margin: 0; font-size: 14px; }
 .help li { margin-bottom: 10px; }
+.sheet.ask { max-width: 420px; margin-top: 18vh; }
+.ask-t { font-weight: 700; font-size: 16px; margin: 4px 0 0; }
+@media (prefers-reduced-motion: reduce) { .flag.on, .log li.new { animation: none; } }
 
 /* ---- 狭い画面 ---- */
 @media (max-width: 860px) {
@@ -328,8 +333,8 @@ tr.me .dnf { color: var(--white); }
 }
 @media (max-width: 560px) {
   body { font-size: 14px; }
-  .main { padding: 16px 16px 48px; }
-  .topbar { padding: 0 16px; gap: 10px; }
+  .main { padding-block: 16px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+  .topbar { padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); gap: 10px; }
   .hide-s { display: none; }
   .panel { padding: 14px 14px 18px; }
   .hero-r .big { font-size: 48px; }
