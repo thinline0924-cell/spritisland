@@ -134,7 +134,7 @@ function startSeason(offer) {
     });
   }
   G.season = { no: G.seasonNo, year: G.year, sid: s.id, teamId: offer.teamId, team: offer.team, target: offer.target, cal, round: 0,
-    entries, points: Object.fromEntries(entries.map(e => [e.id, 0])), results: [] };
+    entries, points: Object.fromEntries(entries.map(e => [e.id, 0])), results: [], trust: 50, rumors: [], flags: {} };
   G.offers = null;
   G.weekend = null;
   saveGame();
@@ -377,10 +377,11 @@ function applyResult(res) {
 }
 
 function finishWeekend() {
+  if (G.weekend && G.weekend.result && !G.weekend.article) giveInterview(0);
   G.season.round++;
   G.weekend = null;
   if (G.season.round >= G.season.cal.length) endSeason();
-  else G.season.event = U.chance(0.75) ? pickPaddockEvent() : null;
+  else { G.season.event = U.chance(0.75) ? pickPaddockEvent() : null; pressBetweenRounds(); }
   saveGame();
 }
 
@@ -456,20 +457,27 @@ function endSeason() {
   if (pos === 1) G.totals.titles.push({ year: S.year, name: s.name });
   G.history.push({ year: S.year, sid: s.id, team: S.team, pos, pts: me.pts, wins, pods, target: S.target, mateBeat, age: d.age });
   G.seasonEnd = { pos, pts: me.pts, wins, pods, target: S.target, mateBeat, repBefore: before, rep: d.rep };
+  G.seasonEnd.article = seasonReview(pos);
   G.offers = makeOffers(pos);
 }
 
 function makeOffers(pos) {
+  pressInit();
   const d = G.driver, S = G.season, cur = curSeries();
+  const rep = effectiveRep();
   const out = [];
   const seen = new Set();
   const add = o => { const k = o.sid + o.teamId; if (!seen.has(k)) { seen.add(k); out.push(o); } };
   // 今のチームとの再契約
-  if (pos <= S.target + 3) add(offerFor(cur.id, S.teamId, '今のチームが残留を望んでいる。'));
-  const cands = SERIES.filter(s => s.id !== 'kart' || cur.id === 'kart').filter(s => s.minRep <= d.rep + 6 && s.tier >= cur.tier - 1);
+  // 残留:成績に加えて、チームの信頼が要る
+  const keep = S.trust >= 35 ? pos <= S.target + 3 : pos <= S.target && S.trust >= 20;
+  if (keep) add({ ...offerFor(cur.id, S.teamId, S.trust >= 70 ? 'チームはあなたを高く買っている。残留を強く望んでいる。' : '今のチームが残留を望んでいる。'), must: true });
+  // うわさになったチームは、必ず声をかけてくる
+  for (const r of (S.trust < 25 ? [] : S.rumors || [])) add({ ...offerFor(r.sid, r.teamId, '新聞のうわさは本当だった。来季のシートを用意している。'), must: true, rumor: true });
+  const cands = SERIES.filter(s => s.id !== 'kart' || cur.id === 'kart').filter(s => s.minRep <= rep + 6 && s.tier >= cur.tier - 1);
   for (const s of U.shuffle(cands)) {
     const ts = teamsOf(s.id).slice().sort((a, b) => a.perf - b.perf);
-    const ok = ts.filter((t, i) => s.minRep + (i / (ts.length - 1)) * 28 - 6 <= d.rep + U.rr(-6, 6) && t.id !== S.teamId);
+    const ok = ts.filter((t, i) => s.minRep + (i / (ts.length - 1)) * 28 - 6 <= rep + U.rr(-6, 6) && t.id !== S.teamId);
     if (!ok.length) continue;
     const t = ok[ok.length - 1 - U.ri(0, Math.min(1, ok.length - 1))];
     const notes = s.tier > cur.tier ? '上のクラスから声がかかった。' : s.disc !== cur.disc ? '別の分野からの誘い。慣れるまでは時間がかかる。' : '同じクラスのライバルチームから。';
@@ -478,14 +486,18 @@ function makeOffers(pos) {
   // 少なすぎるときは下位チームで埋める
   if (out.length < 2) {
     let fb = cur;
-    if (d.rep < cur.minRep - 10) fb = SERIES.filter(s => s.disc === cur.disc && s.tier < cur.tier && s.minRep <= d.rep + 6).sort((a, b) => b.tier - a.tier)[0] || cur;
+    if (rep < cur.minRep - 10) fb = SERIES.filter(s => s.disc === cur.disc && s.tier < cur.tier && s.minRep <= rep + 6).sort((a, b) => b.tier - a.tier)[0] || cur;
     const ts = teamsOf(fb.id).slice().sort((a, b) => a.perf - b.perf);
     const note = fb === cur ? '下位チームのシートが空いている。' : '評価を立て直すなら、ひとつ下のクラスから。';
     add(offerFor(fb.id, ts[0].id, note));
     add(offerFor(fb.id, ts[1].id, note));
   }
   out.sort((a, b) => SERIES_BY_ID[b.sid].tier - SERIES_BY_ID[a.sid].tier || b.perf - a.perf);
-  return out.slice(0, 5);
+  // 評判が高いほど、多くのチームから声がかかる
+  // チームを批判してばかりの選手は、扱いにくいと見られる
+  const max = S.trust < 25 ? 3 : G.press >= 15 ? 6 : G.press <= -15 ? 3 : 5;
+  const picked = [...out.filter(o => o.must), ...out.filter(o => !o.must)].slice(0, Math.max(2, max));
+  return picked.sort((a, b) => SERIES_BY_ID[b.sid].tier - SERIES_BY_ID[a.sid].tier || b.perf - a.perf);
 }
 
 function careerMustEnd() { return G.driver.age >= 38; }

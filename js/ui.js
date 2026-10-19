@@ -180,7 +180,14 @@ function hubScreen() {
         ${head('04', 'DRIVER', 'ドライバー')}
         ${statsBlock()}
       </section>
-    </div>`;
+    </div>
+    <section class="panel press">
+      ${head('05', 'PRESS', '新聞と評判')}
+      <div class="press-grid">
+        ${pressGauge()}
+        <div class="clips">${(G.news || []).slice(0, 3).map(a => clippingHTML(a, 'small')).join('') || '<p class="note">まだ記事は出ていない。レースの結果しだいで、新聞が書き立てる。</p>'}</div>
+      </div>
+    </section>`;
 }
 
 function askOverlay() {
@@ -189,6 +196,32 @@ function askOverlay() {
     <p class="ask-t">${U.esc(a.text)}</p>
     <div class="row-end"><button class="btn ghost" data-act="askno">やめる</button><button class="btn primary" data-act="${a.act}">${U.esc(a.yes)}</button></div>
   </div></div>`;
+}
+
+// ---- 新聞 ----
+function clippingHTML(a, size = 'big') {
+  if (!a) return '';
+  const eff = [];
+  if (a.press) eff.push(`<span class="eff ${a.press < 0 ? 'neg' : ''}">評判 ${a.press > 0 ? '+' : ''}${a.press.toFixed(1)}</span>`);
+  if (a.trust) eff.push(`<span class="eff ${a.trust < 0 ? 'neg' : ''}">チームの信頼 ${a.trust > 0 ? '+' : ''}${a.trust}</span>`);
+  const kindTag = { rumor: '移籍のうわさ', risk: '立場の危機', season: 'シーズン総括' }[a.kind];
+  return `<article class="clip ${size} k-${a.kind}">
+    <header class="clip-mast"><b>${U.esc(a.paper)}</b><span>${U.esc(a.paperEn)}</span><span class="clip-date">${a.year}年 ${a.kind === 'season' ? '最終戦のあと' : `第${a.round}戦${a.kind === 'race' ? '' : 'のあと'}`}</span></header>
+    ${kindTag ? `<span class="clip-kind">${kindTag}</span>` : ''}
+    <h3 class="clip-head">${U.esc(a.head)}</h3>
+    ${size === 'big' ? `<div class="clip-cols"><div class="clip-photo" aria-hidden="true"><span>${G.driver.number}</span></div>${a.body.map(p => `<p>${U.esc(p)}</p>`).join('')}</div>` : `<p class="clip-lede">${U.esc(a.body[0])}</p>`}
+    ${eff.length ? `<footer class="clip-eff">${eff.join('')}</footer>` : ''}
+  </article>`;
+}
+function pressGauge() {
+  const v = G.press || 0, t = G.season ? (G.season.trust ?? 50) : 50;
+  const p = (v + 50) / 100 * 100;
+  return `<div class="press-g">
+    <div class="pg-row"><span class="pg-l">評判</span><span class="pg-bar"><i style="left:${p.toFixed(1)}%"></i></span><b>${pressLevel(v)}</b></div>
+    <div class="pg-scale"><span>酷評</span><span>ふつう</span><span>大人気</span></div>
+    <div class="pg-row"><span class="pg-l">チームの信頼</span><span class="pg-bar t"><i style="left:${t}%"></i></span><b>${Math.round(t)}</b></div>
+    <p class="note">評判は来季のオファーの数と質に、チームの信頼は残留できるかに効く。</p>
+  </div>`;
 }
 
 function helpOverlay() {
@@ -201,6 +234,7 @@ function helpOverlay() {
       <li><b>ピットの壁からの指示</b>:レース中、雨・セーフティカー・タイヤの限界・バトル・終盤では無線で指示を出す。15秒で答えないと、おすすめの案になる。「最後まで任せる」でチームに任せることもできる。</li>
       <li><b>耐久</b>:3人で1台。燃料補給の周回は決まっている。タイヤを毎回替えるか2スティント使うか、自分が何スティント乗るかを決める。</li>
       <li><b>ラリー</b>:1台ずつステージのタイムを競う。ループごとにタイヤ、スペアの本数、攻め方を決める。途中で止まっても、最終ループ以外なら5分加算で再出走できる。</li>
+      <li><b>新聞と評判</b>:レースのあとは記者の取材に答える。結果と答え方で新聞記事が出て、評判とチームの信頼が動く。評判が高いと上のチームからうわさが立ち、オファーが増える。チームを批判すると記事は目立つが、残留が難しくなる。</li>
       <li><b>レースの合間</b>:パドックでは出来事が起きる。選んだことが次の週末やドライバーに効いてくる。</li>
       <li><b>キャリア</b>:シーズンが終わると、成績と評価に応じてオファーが届く。チームの目標順位を上回ると評価が上がる。能力は走るたびに伸び、30代半ばから衰えていく。</li>
     </ol>

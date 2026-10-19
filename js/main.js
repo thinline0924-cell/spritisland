@@ -74,6 +74,7 @@ const ACT = {
   toresult() { App.race = null; App.play = null; window.scrollTo(0, 0); render(); },
   replay() { App.race = replayOf(G.weekend.result); App.play = { speed: 3 }; window.scrollTo(0, 0); render(); },
   done() { App.race = null; App.play = null; finishWeekend(); window.scrollTo(0, 0); render(); },
+  interview(i) { giveInterview(Number(i)); render(); },
   pevent(i) { resolvePaddockEvent(Number(i)); render(); },
   autosetup() { autoSetup(); render(); },
 };

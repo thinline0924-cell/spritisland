@@ -289,12 +289,18 @@ function resultScreen() {
   }).join('');
   const growth = Object.entries(wk.growth || {}).filter(([, d]) => Math.abs(d) >= 0.1).map(([k, d]) => `<span class="gr ${d < 0 ? 'neg' : ''}">${STAT_NAMES[k]} ${d > 0 ? '+' : ''}${d.toFixed(1)}</span>`).join('');
   const last = G.season.round + 1 >= G.season.cal.length;
+  const press = wk.article ? `<section class="press-after">${clippingHTML(wk.article, 'big')}</section>` : `<section class="interview">
+      <div class="iv-k">PRESS — 囲み取材</div>
+      <p class="iv-q">記者「${me.dnf ? '残念な結果になりましたね。何があったんですか?' : me.pos <= 3 ? `おめでとうございます。${me.pos}位という結果をどう見ますか?` : `今日の${me.pos}位、振り返ってどうでしたか?`}」</p>
+      <div class="iv-opts">${INTERVIEW.map((o, i) => `<button type="button" class="iv-o" data-act="interview" data-arg="${i}"><b>${o.label}</b><span>${o.desc}</span></button>`).join('')}</div>
+    </section>`;
   return `${weekendHead(s, v, 2)}
   <section class="result-hero">
     <span class="rh-pos">${head1}</span>
     <div><p class="rh-line">${line}</p><p class="muted">${extra.join('・')}${me.points ? `・${me.points}ポイント獲得` : ''}</p>
     ${growth ? `<div class="growth">${growth}</div>` : ''}</div>
   </section>
+  ${press}
   <div class="grid2 wide-l">
     <section class="panel">
       ${head('01', 'CLASSIFICATION', '最終結果')}
@@ -320,8 +326,9 @@ function offersScreen() {
       <span class="rh-pos">P${e.pos}</span>
       <div><p class="rh-line">${G.season.year}年 ${U.esc(s.name)}:シリーズ${e.pos}位。${verdict}</p>
       <p class="muted">${e.pts}ポイント・${e.wins}勝・表彰台${e.pods}回${e.mateBeat === true ? '・チームメイトに勝った' : e.mateBeat === false ? '・チームメイトに負けた' : ''}</p>
-      <div class="growth"><span class="gr ${e.rep < e.repBefore ? 'neg' : ''}">評価 ${Math.round(e.repBefore)} → ${Math.round(e.rep)}</span></div></div>
-    </section>`;
+      <div class="growth"><span class="gr ${e.rep < e.repBefore ? 'neg' : ''}">評価 ${Math.round(e.repBefore)} → ${Math.round(e.rep)}</span><span class="gr">評判 ${pressLevel(G.press || 0)}</span><span class="gr ${(G.season.trust ?? 50) < 35 ? 'neg' : ''}">チームの信頼 ${Math.round(G.season.trust ?? 50)}</span></div></div>
+    </section>
+    ${e.article ? `<section class="press-after">${clippingHTML(e.article, 'big')}</section>` : ''}`;
   }
   const first = !G.season;
   const rows = G.offers.map((o, i) => {
@@ -329,7 +336,7 @@ function offersScreen() {
     const famLow = s.id !== 'kart' && d.fam[s.disc] < 40;
     return `<article class="offer">
       <div class="of-tier">${tierLabel(s)}<small>${DISC_NAME[s.disc]}</small></div>
-      <div class="of-main"><h3>${U.esc(s.name)}</h3><p class="of-team">${U.esc(o.team)}</p><p class="note">${U.esc(o.note)}${famLow ? ' この分野の経験はまだ浅い。' : ''}</p></div>
+      <div class="of-main"><h3>${U.esc(s.name)}${o.rumor ? ' <span class="tag">うわさ</span>' : ''}</h3><p class="of-team">${U.esc(o.team)}</p><p class="note">${U.esc(o.note)}${famLow ? ' この分野の経験はまだ浅い。' : ''}</p></div>
       <dl class="of-spec"><div><dt>マシン</dt><dd>${grade(o.perf)}</dd></div><div><dt>信頼性</dt><dd>${grade(o.rel)}</dd></div><div><dt>目標</dt><dd>${o.target}位</dd></div></dl>
       <button class="btn primary" data-act="sign" data-arg="${i}">契約する</button>
     </article>`;
@@ -338,7 +345,7 @@ function offersScreen() {
   return `${summary}
   <section class="panel">
     ${head(first ? '01' : '02', 'OFFERS', first ? '最初の契約' : `${G.year + 1}年のオファー`)}
-    ${first ? '<p class="note">17歳。いくつかのチームから声がかかっている。どこでキャリアを始めるか。</p>' : `<p class="note">${d.age + 1}歳のシーズン。評価 ${Math.round(d.rep)}。</p>`}
+    ${first ? '<p class="note">17歳。いくつかのチームから声がかかっている。どこでキャリアを始めるか。</p>' : `<p class="note">${d.age + 1}歳のシーズン。評価 ${Math.round(d.rep)}・評判「${pressLevel(G.press || 0)}」。チームは評価に新聞の評判を加えて見ている(実際の評価 ${Math.round(effectiveRep())})。</p>`}
     ${end ? '<p class="warn">38歳。そろそろヘルメットを置く時だ。</p>' : `<div class="offers">${rows}</div>`}
     ${first ? '' : `<div class="row-end"><button class="btn ${end ? 'primary' : 'ghost'}" data-act="retire">引退する</button></div>`}
   </section>
