@@ -1,0 +1,13 @@
+# Render Blueprint(Render で公開するための設定ファイル)
+# 静的サイト(ファイルをそのまま配るだけ)なので無料で、APIキーなどの設定も不要
+services:
+  - type: web
+    name: pitwall
+    runtime: static
+    buildCommand: echo "ビルドは不要です"
+    staticPublishPath: .
+    branch: racing-career
+    headers:
+      - path: /*
+        name: Cache-Control
+        value: no-cache
