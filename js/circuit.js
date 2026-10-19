@@ -140,7 +140,9 @@ function simQualifying(series, track, weather, entries) {
 }
 
 // ---- 決勝 ----
-function simRace(series, track, weather, entries, grid, opts = {}) {
+// 決勝。1周ずつ進める「レース」を作る。live のときは、プレイヤーの車について
+// ピットの壁からの指示(call)を出して、答えを待つ。
+function createRace(series, track, weather, entries, grid, opts = {}) {
   const L = series.laps, scale = track.base / 90, endurance = series.kind === 'endurance';
   const fuelStint = series.fuelStint || 0;
   const allTyres = [...series.dry, ...series.wet];
@@ -160,6 +162,8 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
       stopsDone: 0, dnf: false, lapsDone: 0, wxCount: 0, usedDry: new Set(isWetTyre(startTyre) ? [] : [startTyre]), usedWet: isWetTyre(startTyre),
       last: 0, best: Infinity, penalty: 0, mistakes: 0, overtakes: 0, stuck: 0, stuckOn: null, cliffWarned: false, stintStart: 0,
       rainPolicy: plan.rain || 'react', scPolicy: plan.sc || 'box', delay: e.isPlayer ? 0 : U.ri(0, 2), garage: 0,
+      boxNext: null, boxReason: '', ovStyle: null, ovUntil: 0, attackUntil: 0, defendUntil: 0, wxHold: 0,
+      cliffAsked: -1, stuckAsked: null, defendAsked: null, finalAsked: false,
     };
     byId[id] = c;
     return c;
@@ -186,6 +190,7 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
     return best;
   }
   function styleOf(c) {
+    if (c.ovStyle && c.ovUntil >= curLap) return c.ovStyle;
     if (endurance) return c.e.plan.care || 'normal';
     const s = c.e.plan.styles || ['normal'];
     return s[Math.min(c.stopsDone, s.length - 1)] || 'normal';
@@ -210,8 +215,31 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
   const scLen = endurance ? 2 : 3;
   let prevLeader = grid[0];
   const playerCar = cars.find(P);
+  let curLap = 0;
+  const R = { L, events, snaps, cars, byId, live: !!opts.live, call: null, lastCall: -9, done: false, result: null, endurance, track, series };
+  R.step = () => {
+    if (R.done || R.call) return null;
+    curLap++;
+    runLap(curLap);
+    if (curLap === L) finish();
+    return snaps[snaps.length - 1];
+  };
+  R.answer = i => {
+    const call = R.call;
+    if (!call) return;
+    const o = call.options[i] || call.options[call.def];
+    o.apply();
+    ev(call.lap, `指示:${o.label}`, 'call', true);
+    R.lastCall = call.lap;
+    R.call = null;
+  };
+  R.finishAll = () => {
+    R.live = false;
+    while (!R.done) { if (R.call) R.answer(R.call.def); R.step(); }
+    return R.result;
+  };
 
-  for (let lap = 1; lap <= L; lap++) {
+  function runLap(lap) {
     const w = weather.wet[lap];
     // 天候のアナウンス
     if (weather.rain[lap] > 0.05 && weather.rain[lap - 1] <= 0.05 && lap > 1) ev(lap, '雨が降り始めた。', 'weather');
@@ -233,12 +261,17 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
       c.pit = false;
       let newTyre = null, reason = '';
 
+      // ピットの壁からの指示
+      const auto = !(R.live && P(c));
+      if (P(c) && c.boxNext && remaining > 0 && series.pits) { newTyre = c.boxNext; reason = c.boxReason || 'call'; c.boxNext = null; }
+
       // 天候への対応
       const best = bestTyreFor(w, c);
       const curP = wetPen(c.tyre, w), bestP = wetPen(best, w);
       const margin = { early: 0.3, react: 1.0, gamble: 3.2 }[c.rainPolicy];
       const delay = { early: 0, react: 1, gamble: 0 }[c.rainPolicy] + (P(c) ? 0 : c.delay);
-      if (isWetTyre(best) !== isWetTyre(c.tyre) || (isWetTyre(best) && best !== c.tyre && curP - bestP > 1.5)) {
+      if (!auto || newTyre) { /* 指示しだい */ }
+      else if (isWetTyre(best) !== isWetTyre(c.tyre) || (isWetTyre(best) && best !== c.tyre && curP - bestP > 1.5)) {
         if (curP - bestP > margin) c.wxCount++; else c.wxCount = 0;
         if (c.wxCount > delay && remaining > 0) {
           newTyre = isWetTyre(best) ? best : chooseDry(c, remaining);
@@ -251,7 +284,7 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
         newTyre = c.stops[0].tyre; c.stops.shift(); reason = 'plan';
       }
       // セーフティカー中に前倒し
-      if (!newTyre && scLap && !isWetTyre(c.tyre) && c.stops.length && c.stops[0].lap - lap <= (endurance ? 0 : 10) && remaining > 2) {
+      if (!newTyre && auto && scLap && !isWetTyre(c.tyre) && c.stops.length && c.stops[0].lap - lap <= (endurance ? 0 : 10) && remaining > 2) {
         const go = P(c) ? c.scPolicy === 'box' : U.chance(0.65);
         if (go) { newTyre = c.stops[0].tyre; c.stops.shift(); reason = 'sc'; }
       }
@@ -278,6 +311,7 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
         + wetPen(c.tyre, w) * scale + 5 * w * scale + c.e.setupPen * scale + STYLES[st].off * scale
         + U.gauss() * 0.22 * (1.4 - d.cons / 100) * scale;
       if (endurance) t += U.rr(0, 1.3) * (1.25 - d.craft / 100) * scale; // 遅いクラスの車との交錯
+      if (c.defendUntil >= lap) t += 0.15 * scale; // ラインを守る分だけ遅くなる
       if (lap === 1) t += U.gauss() * 0.5 * (1.3 - d.craft / 100) + (U.chance(0.03) ? U.rr(2, 6) : 0);
 
       const night = lap >= nightFrom && lap <= nightTo;
@@ -322,7 +356,7 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
         c.pit = true;
         if (newTyre) {
           if (P(c)) {
-            const why = { weather: '天候に合わせて', sc: 'セーフティカーに合わせて', worn: 'タイヤが限界で', plan: '予定どおり', fuel: '' }[reason] || '';
+            const why = { weather: '天候に合わせて', sc: 'セーフティカーに合わせて', worn: 'タイヤが限界で', plan: '予定どおり', fuel: '', call: 'チームの指示で', undercut: 'アンダーカットを狙って' }[reason] || '';
             ev(lap, `${nameOf(c)}がピットイン。${why}${TYRES[newTyre].name}へ。${slow ? `作業に手間取った(${stop.toFixed(1)}秒)。` : `作業は${stop.toFixed(1)}秒。`}`, 'pit', true);
           } else if (reason === 'weather' && !endurance && order.indexOf(c) < 3) {
             ev(lap, `${nameOf(c)}がピットへ。${TYRES[newTyre].name}を選んだ。`, 'pit');
@@ -363,6 +397,8 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
           const adv = a.last - c.last;
           let pc = 0.08 + track.pass * 0.45 + U.clamp(adv * 0.25, -0.2, 0.35) + (driverOf(c, lap).craft - driverOf(a, lap).craft) / 250;
           if (endurance) pc += 0.25;
+          if (c.attackUntil >= lap) pc += 0.25;
+          if (a.defendUntil >= lap) pc -= 0.2;
           if (lap === 1) pc *= 1.5;
           ok = c.cum < a.cum + 0.15 && U.chance(U.clamp(pc, 0.03, 0.92));
         }
@@ -371,8 +407,9 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
           run[i - 1] = c; run[i] = a;
           if (!a.pit) {
             c.overtakes++;
-            if (P(c)) ev(lap, `${nameOf(c)}が${nameOf(a)}を抜いて${i}位へ。`, 'pass', true);
-            else if (P(a)) ev(lap, `${nameOf(a)}は${nameOf(c)}に抜かれて${i + 1}位。`, 'lost', true);
+            if (P(c)) ev(lap, U.pick(PASS_LINES)(nameOf(c), nameOf(a), i), 'pass', true);
+            else if (P(a)) ev(lap, U.pick(LOST_LINES)(nameOf(a), nameOf(c), i + 1), 'lost', true);
+            else if (i <= 3 && !endurance) ev(lap, `${nameOf(c)}が${nameOf(a)}をかわして${i}位。`, 'info');
           }
           if (P(c)) c.stuck = 0;
         } else if (c.cum < a.cum + 0.3) {
@@ -410,8 +447,94 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
       dnf: cars.filter(c => c.dnf).map(c => c.id),
       label: label(lap),
     });
+    // 節目ごとのまとめ
+    if (playerCar && !playerCar.dnf && lap % 10 === 0 && lap < L && !endurance) {
+      const pos = run.indexOf(playerCar) + 1;
+      const lead = run[0];
+      ev(lap, `残り${L - lap}周。トップは${nameOf(lead)}。${nameOf(playerCar)}は${pos}位${pos > 1 ? `、前の車と${(playerCar.cum - run[pos - 2].cum).toFixed(1)}秒差` : `、2位と${(run[1] ? run[1].cum - lead.cum : 0).toFixed(1)}秒差`}。`, 'summary', true);
+    }
+    if (R.live && lap < L) makeCall(lap, scLap, prevSc, run);
   }
 
+  // ---- ピットの壁からの指示 ----
+  function makeCall(lap, scLap, prevSc, run) {
+    const c = playerCar;
+    if (!c || c.dnf) return;
+    const remaining = L - lap, pos = run.indexOf(c) + 1;
+    const mk = (kind, title, text, options, def) => { R.call = { kind, lap, title, text, options, def }; };
+    const next = c.stops[0];
+    // セーフティカー
+    if (scLap && !prevSc && series.pits && !endurance && remaining > 3 && !isWetTyre(c.tyre)) {
+      const o = series.dry.map(t => ({ label: `ピットへ → ${TYRES[t].name}`, desc: `寿命の目安 約${Math.round(lifeOf(c, t))}周(残り${remaining}周)`,
+        apply: () => { c.boxNext = t; c.boxReason = 'sc'; if (next && next.lap - lap <= 12) c.stops.shift(); } }));
+      o.push({ label: 'ステイアウト', desc: next ? `予定のピットは${next.lap}周目。順位は守れる。` : '順位を守ってそのまま走る。', apply: () => {} });
+      const def = next && next.lap - lap <= 10 ? Math.max(0, series.dry.indexOf(next.tyre)) : o.length - 1;
+      return mk('sc', 'セーフティカー', `${scReason}。隊列がスローダウンした。今ピットに入れば、失う時間は普段の半分(約${Math.round(series.pitLoss * 0.45)}秒)。`, o, def);
+    }
+    // 天候の変化
+    if (series.pits && lap >= c.wxHold && remaining > 1) {
+      const w2 = weather.wet[lap + 1];
+      const best = bestTyreFor(w2, c);
+      const gain = wetPen(c.tyre, w2) - wetPen(best, w2);
+      if ((isWetTyre(best) !== isWetTyre(c.tyre) || (isWetTyre(best) && best !== c.tyre)) && gain > 0.4) {
+        const cands = isWetTyre(best) ? series.wet.filter(t => wetPen(t, w2) - wetPen(best, w2) < 2.5) : [chooseDry(c, remaining)];
+        const o = cands.map(t => ({ label: `ピットへ → ${TYRES[t].name}`, desc: t === best ? '今の路面にいちばん合う。' : '路面がさらに変わるならこちら。',
+          apply: () => { c.boxNext = t; c.boxReason = 'weather'; } }));
+        o.push({ label: 'あと1周様子を見る', desc: '次の周でもう一度判断する。', apply: () => { c.wxHold = lap + 1; } });
+        o.push({ label: '賭けて粘る', desc: '4周はこのまま。外れると大きく遅れる。', apply: () => { c.wxHold = lap + 4; } });
+        const cond = w2 < 0.05 ? '路面はほぼ乾いた' : w2 < 0.25 ? '路面が湿ってきた' : w2 < 0.55 ? '路面はもうウェット' : '大雨。水しぶきで前が見えない';
+        return mk('weather', isWetTyre(best) ? '雨だ' : '路面が乾いてきた', `${cond}。今の${TYRES[c.tyre].name}だと1周あたり約${(gain * scale).toFixed(1)}秒遅い。`, o, gain > 1.0 ? 0 : o.length - 2);
+      }
+    }
+    if (lap - R.lastCall < 3) return;
+    // タイヤの限界
+    if (series.pits && !endurance && !isWetTyre(c.tyre) && c.cliffAsked !== c.stopsDone && remaining > 3) {
+      const life = lifeOf(c, c.tyre);
+      if (c.age >= life - 1 && (!next || next.lap > lap + 2)) {
+        c.cliffAsked = c.stopsDone;
+        const t = chooseDry(c, remaining);
+        return mk('tyre', 'タイヤが限界', `${TYRES[c.tyre].name}で${c.age}周。無線「グリップが落ちてきた。どうする?」`, [
+          { label: `次の周で入る → ${TYRES[t].name}`, desc: next ? `予定の${next.lap}周目を前倒しする。` : 'ピットが1回増える。', apply: () => { c.boxNext = t; c.boxReason = 'worn'; if (next) c.stops.shift(); } },
+          { label: '労わって予定まで粘る', desc: 'ペースを落としてタイヤを持たせる。', apply: () => { c.ovStyle = 'save'; c.ovUntil = next ? next.lap : L; } },
+          { label: 'このまま押す', desc: '急にグリップが無くなる恐れがある。', apply: () => {} },
+        ], 0);
+      }
+    }
+    // 前の車に詰まっている
+    if (c.stuck >= 2 && c.stuckAsked !== c.stuckOn && byId[c.stuckOn] && !byId[c.stuckOn].dnf) {
+      const a = byId[c.stuckOn];
+      c.stuckAsked = c.stuckOn;
+      const o = [{ label: '仕掛ける', desc: '3周のあいだ全開。抜ける確率が上がるが、タイヤとミスに響く。', apply: () => { c.attackUntil = lap + 3; c.ovStyle = 'push'; c.ovUntil = lap + 3; } }];
+      if (series.pits && !endurance && next && next.lap - lap <= 8 && next.lap > lap + 1) {
+        o.push({ label: 'アンダーカット', desc: `次の周でピットへ(予定は${next.lap}周目)。新品タイヤで前に出る。`, apply: () => { c.boxNext = next.tyre; c.boxReason = 'undercut'; c.stops.shift(); } });
+      }
+      o.push({ label: '引いてタイヤを守る', desc: '後半のチャンスに備える。', apply: () => { c.ovStyle = 'save'; c.ovUntil = lap + 3; } });
+      return mk('battle', `${nameOf(a)}に詰まっている`, `${pos - 1}位の${nameOf(a)}の真後ろで${c.stuck}周。相手は${TYRES[a.tyre].name}で${a.age}周目。`, o, 0);
+    }
+    // 後ろから迫られている
+    const behind = run[pos];
+    if (behind && !behind.pit && !c.pit && behind.cum - c.cum < 0.6 && behind.last < c.last && c.defendAsked !== behind.id && remaining > 2 && lap - (c.defendLap || -99) >= (endurance ? 14 : 8)) {
+      c.defendAsked = behind.id; c.defendLap = lap;
+      return mk('defend', `後ろに${nameOf(behind)}`, `差は${(behind.cum - c.cum).toFixed(1)}秒。相手は${TYRES[behind.tyre].name}で${behind.age}周目。`, [
+        { label: '守りに入る', desc: '3周のあいだラインを閉める。少し遅くなるが抜かれにくい。', apply: () => { c.defendUntil = lap + 3; } },
+        { label: '自分のペースで', desc: 'タイムを優先する。', apply: () => {} },
+      ], 0);
+    }
+    // 終盤
+    const finLap = endurance ? L - 6 : L - (L > 20 ? 5 : 3);
+    if (lap >= finLap && !c.finalAsked) {
+      c.finalAsked = true;
+      const ahead = run[pos - 2];
+      const txt = `${nameOf(c)}は${pos}位。` + (ahead ? `前の${nameOf(ahead)}と${(c.cum - ahead.cum).toFixed(1)}秒。` : '') + (behind ? `後ろの${nameOf(behind)}とは${(behind.cum - c.cum).toFixed(1)}秒。` : '');
+      return mk('final', `残り${remaining}周`, txt, [
+        { label: '全開で行く', desc: '最後まで攻める。タイヤとミスの危険は増える。', apply: () => { c.ovStyle = 'push'; c.ovUntil = L; c.attackUntil = L; } },
+        { label: 'このまま', desc: '今のペースで走り切る。', apply: () => {} },
+        { label: '順位を守る', desc: 'ペースを抑えてミスを減らす。', apply: () => { c.ovStyle = 'save'; c.ovUntil = L; c.defendUntil = L; } },
+      ], 1);
+    }
+  }
+
+  function finish() {
   // 2種類のタイヤ義務
   if (series.twoCompounds) for (const c of cars) {
     if (!c.dnf && !c.usedWet && c.usedDry.size < 2) {
@@ -430,5 +553,24 @@ function simRace(series, track, weather, entries, grid, opts = {}) {
   const fl = classification.filter(r => isFinite(r.best)).sort((a, b) => a.best - b.best)[0];
   if (fin.length) ev(L, `チェッカー。${nameOf(fin[0])}が優勝。`, 'finish');
   const wetRace = weather.wet.some(x => x > 0.15);
-  return { classification, snaps, events, fastest: fl ? fl.id : null, wetRace, laps: L };
+  R.result = { classification, snaps, events, fastest: fl ? fl.id : null, wetRace, laps: L };
+  R.done = true;
+  }
+  return R;
 }
+
+function simRace(series, track, weather, entries, grid, opts = {}) {
+  return createRace(series, track, weather, entries, grid, { ...opts, live: false }).finishAll();
+}
+
+const PASS_LINES = [
+  (me, o, p) => `${me}が${o}のインに飛び込む。${p}位へ浮上。`,
+  (me, o, p) => `ストレートで並んだ。${me}がブレーキング勝負で${o}を仕留めて${p}位。`,
+  (me, o, p) => `${me}、${o}をアウトからかわした。${p}位。`,
+  (me, o, p) => `${o}の立ち上がりが乱れた。${me}が見逃さず${p}位へ。`,
+];
+const LOST_LINES = [
+  (me, o, p) => `${o}が${me}のインを突いた。${me}は${p}位に後退。`,
+  (me, o, p) => `${me}、ストレートで${o}に並ばれて${p}位へ下がる。`,
+  (me, o, p) => `守り切れない。${o}が前へ。${me}は${p}位。`,
+];

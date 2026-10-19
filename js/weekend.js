@@ -28,11 +28,12 @@ function setupScreen() {
        <div class="ctrl"><span class="ctrl-l">ギア比</span>${seg('setup.gear', su.gear, [[0, '短い'], [1, '中間'], [2, '長い']])}</div>`
     : `<div class="ctrl"><span class="ctrl-l">リアウイング</span>${seg('setup.wing', su.wing, [[1, '1', '寝かせる'], [2, '2'], [3, '3'], [4, '4'], [5, '5', '立てる']])}</div>
        <div class="ctrl"><span class="ctrl-l">サスペンション</span>${seg('setup.susp', su.susp, [[0, '柔らかい'], [1, '中間'], [2, '硬い']])}</div>`;
-  const best = !rally && wk.runs.length ? Math.min(...wk.runs.map(r => r.lap)) : null;
+  const laps = wk.runs.filter(r => r.lap != null).map(r => r.lap);
+  const best = !rally && laps.length ? Math.min(...laps) : null;
   const runs = wk.runs.length ? `<table class="tbl runs"><thead><tr><th class="n">回</th><th>設定</th><th class="n">${rally ? '感触' : 'タイム'}</th><th>ドライバーの声</th></tr></thead><tbody>
     ${wk.runs.map((r, i) => `<tr><td class="n">${i + 1}</td>
       <td class="nowrap">${rally ? `足${['柔', '中', '硬'][r.setup.susp]}・ギア${['短', '中', '長'][r.setup.gear]}` : `W${r.setup.wing}・足${['柔', '中', '硬'][r.setup.susp]}`}</td>
-      <td class="n b">${rally ? (r.delta < 0.6 ? '良い' : r.delta < 1.2 ? 'まあまあ' : '悪い') : U.fmtLap(r.lap) + (r.lap === best ? ' ◆' : '')}</td>
+      <td class="n b">${r.auto ? '—' : rally ? (r.delta < 0.6 ? '良い' : r.delta < 1.2 ? 'まあまあ' : '悪い') : U.fmtLap(r.lap) + (r.lap === best ? ' ◆' : '')}</td>
       <td class="voice">${r.notes.map(n => `「${n}」`).join('<br>')}</td></tr>`).join('')}</tbody></table>`
     : `<p class="note">まだ走っていない。設定を選んで走らせると、ドライバーが感想を返してくる。</p>`;
   const qual = rally ? `${head('02', 'SHAKEDOWN', '本番前の走り方')}
@@ -56,7 +57,11 @@ function setupScreen() {
     <section class="panel">
       ${head('01', rally ? 'SETUP' : 'PRACTICE', rally ? 'セットアップとシェイクダウン' : 'フリー走行とセットアップ')}
       ${controls}
-      <button class="btn wide" data-act="practice" ${wk.runsLeft <= 0 ? 'disabled' : ''}>この設定で走ってみる(残り${wk.runsLeft}回)</button>
+      ${(wk.notes || []).map(n => `<p class="warn sky">${U.esc(n)}</p>`).join('')}
+      <div class="btn-row">
+        <button class="btn" data-act="practice" ${wk.runsLeft <= 0 ? 'disabled' : ''}>この設定で走ってみる(残り${wk.runsLeft}回)</button>
+        <button class="btn ghost" data-act="autosetup" ${wk.runsLeft <= 0 ? 'disabled' : ''}>エンジニアにおまかせ</button>
+      </div>
       ${runs}
       ${qual}
     </section>
@@ -90,7 +95,8 @@ function qualBlock(wk) {
     return gapRow + `<tr class="${r.id === 'P' ? 'me' : ''}"><td class="n">${i + 1}</td><td>${U.esc(name(r.id))}${r.mistake ? ' <span class="tag">ミス</span>' : ''}</td><td class="n">${i === 0 ? U.fmtLap(r.time) : '+' + r.gap.toFixed(3)}</td></tr>`;
   }).join('');
   const me = ord[meI];
-  return `<p class="qual-big"><b>P${meI + 1}</b><span>${meI === 0 ? 'ポールポジション。' : `トップと${me.gap.toFixed(3)}秒差。`}${me.mistake ? 'アタック中にミスがあった。' : ''}${wk.qual.wet > 0.05 ? '(ウェット予選)' : ''}</span></p>
+  const gp = wk.grid ? wk.grid.indexOf('P') + 1 : meI + 1;
+  return `<p class="qual-big"><b>P${meI + 1}</b><span>${meI === 0 ? 'ポールポジション。' : `トップと${me.gap.toFixed(3)}秒差。`}${me.mistake ? 'アタック中にミスがあった。' : ''}${wk.qual.wet > 0.05 ? '(ウェット予選)' : ''}${gp !== meI + 1 ? `<br>ペナルティで${gp}番グリッドから。` : ''}</span></p>
     <table class="tbl">${rows}</table>`;
 }
 
@@ -99,6 +105,7 @@ function planScreen() {
   if (s.kind === 'rally') return rallyPlanScreen(s, v, wk);
   const p = wk.plan;
   let strat = '';
+  const radioNote = `<div class="radio-note"><b>RADIO</b><span>雨、セーフティカー、タイヤの限界、バトル、終盤。レース中の大事な場面では、無線で指示を出せる。</span></div>`;
   const rainOpts = [
     ['early', '早めに替える', '路面が変わり始めたらすぐピットへ。外れると無駄なピットになる。'],
     ['react', '様子を見て替える', 'はっきり変わってから1周後に入る。いちばん無難。'],
@@ -113,13 +120,13 @@ function planScreen() {
       <div class="ctrl"><span class="ctrl-l">あなたの担当</span>${seg('plan.share', p.share, [['less', '2スティント'], ['even', '3スティント'], ['more', '4スティント', '連続あり']])}</div>
       <div class="ctrl"><span class="ctrl-l">マシンの扱い</span>${seg('plan.care', p.care, Object.entries(STYLES).map(([k, x]) => [k, x.name]))}</div>
       <p class="note">攻めるほど速いが、故障しやすくなる。連続スティントでは疲れでミスが増える。チームメイト:${S.entries.find(e => e.isPlayer).crew.slice(1).map(d => U.esc(d.name)).join('、')}</p>
-      ${head('03', 'RAIN', '雨への対応')}
-      ${choiceList('plan.rain', p.rain, rainOpts)}`;
+      ${radioNote}`;
   } else if (!s.pits) {
     strat = `${head('02', 'RACE', '決勝の走り方')}
       <p class="note">ピットは無い。タイヤは最後まで同じもの。雨が降ってもそのまま走るしかない。</p>
       <div class="ctrl"><span class="ctrl-l">走り方</span>${seg('plan.styles.0', p.styles[0], Object.entries(STYLES).map(([k, x]) => [k, x.name]))}</div>
-      <p class="note">攻めると速いがタイヤが減りやすく、ミスも増える。労わると遅いが終盤まで粘れる。</p>`;
+      <p class="note">攻めると速いがタイヤが減りやすく、ミスも増える。労わると遅いが終盤まで粘れる。</p>
+      ${radioNote}`;
   } else {
     const opts = estimateStrategies(s, v, { tyre: G.driver.stats.tyre, startAge: wk.qApproach === 'save' ? 0 : 3, noise: wk.engNoise || 1 });
     App.opts = opts;
@@ -146,13 +153,7 @@ function planScreen() {
         ${p.stops.length < 3 ? `<button class="mini add" data-act="addstop">+ ピットを足す</button>` : ''}
       </div>
       ${warn}
-      ${head('03', 'RAIN', '雨への対応')}
-      ${choiceList('plan.rain', p.rain, rainOpts)}
-      ${s.id === 'kart' ? '' : `${head('04', 'SAFETY CAR', 'セーフティカーが出たら')}
-      ${choiceList('plan.sc', p.sc, [
-        ['box', '予定を早めてピットへ', '10周以内にピット予定があれば前倒しする。ピットのロスが半分になる。'],
-        ['stay', '予定どおり', '順位を守ってステイアウト。'],
-      ])}`}`;
+      ${radioNote}`;
   }
   return `${weekendHead(s, v, 1)}
   <div class="grid2 wide-r">
@@ -213,6 +214,7 @@ function rallyPlanScreen(s, v, wk) {
     <section class="panel">
       ${head('01', 'LOOPS', 'ループごとの計画')}
       <p class="note">ループの間にサービスパークがあり、修理とタイヤ交換ができる。</p>
+      <div class="radio-note"><b>RADIO</b><span>サービスパークでは次のループの攻め方を変えられる。パンクしたときは、止まって替えるか走り切るかを決める。</span></div>
       <div class="loops">${loops}</div>
       <button class="btn primary wide go" data-act="race">送り出す</button>
     </section>

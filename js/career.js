@@ -56,7 +56,8 @@ function genAIDriver(tier) {
 
 function playerDrv(disc) {
   const d = G.driver;
-  return { ...d.stats, name: d.name, short: d.name, famPen: (100 - d.fam[disc]) * 0.12 };
+  const m = (G.weekend && G.weekend.mods) || {};
+  return { ...d.stats, cons: d.stats.cons + (m.cons || 0), name: d.name, short: d.name, famPen: (100 - d.fam[disc]) * 0.12 };
 }
 
 // ---- 新しいキャリア ----
@@ -184,7 +185,44 @@ function startWeekend() {
     wk.setup = { wing: 3, susp: 1 };
     wk.qApproach = 'safe';
   }
+  // レースの合間の出来事の効果
+  const m = G.season.mods || {};
+  wk.mods = m;
+  wk.notes = [];
+  if (m.runs) wk.runsLeft = Math.max(1, wk.runsLeft + m.runs);
+  if (m.gamble === 'parts') {
+    m.perf = U.chance(0.65) ? 2.5 : -2;
+    wk.notes.push(m.perf > 0 ? '新型ウイングは当たり。コーナーで車が安定している。' : '新型ウイングはどうも合わない。少し遅い。');
+  }
+  if (m.forecast) {
+    if (s.kind === 'rally') wk.ev.forecast = wk.ev.loopRain.map(r => r > 0 ? 90 : 0);
+    else {
+      const W = wk.weather, L = s.laps;
+      W.forecast.parts = [0, 1, 2, 3].map(q => { let any = false; for (let l = Math.floor(q * L / 4) + 1; l <= Math.floor((q + 1) * L / 4); l++) if (W.rain[l] > 0.05) any = true; return any ? 90 : 0; });
+      W.forecast.qual = W.qualWet > 0 ? 90 : 0;
+    }
+    wk.notes.push('予報士の見立てどおりなら、この予報はまず外れない。');
+  }
+  if (m.engExact) wk.notes.push('データ班のおかげで、タイヤ寿命の見積もりは正確。');
+  if (m.gridDrop) wk.notes.push(`エンジン交換のペナルティで、予選順位から${m.gridDrop}つ下がる。`);
+  G.season.mods = null;
   G.weekend = wk;
+  saveGame();
+}
+
+// エンジニアにおまかせ:データから決める。少し外れることもある
+function autoSetup() {
+  const wk = G.weekend, s = curSeries(), v = venueOf(s.id, wk.vid);
+  const id = idealSetup(s.id, v);
+  const su = { ...id };
+  if (U.chance(0.45)) {
+    const k = U.pick(Object.keys(su));
+    const max = k === 'wing' ? 5 : 2, min = k === 'wing' ? 1 : 0;
+    su[k] = U.clamp(su[k] + U.pick([-1, 1]), min, max);
+  }
+  wk.setup = su;
+  wk.runs.push({ setup: { ...su }, notes: ['エンジニアがデータから組んだセットアップ。'], lap: null, delta: null, auto: true });
+  wk.runsLeft = 0;
   saveGame();
 }
 
@@ -227,6 +265,9 @@ function buildCircuitEntries(plan) {
       base.crew = crew; base.rota = rota; base.drv = crew[0];
     } else base.drv = e.isPlayer ? playerDrv(s.disc) : e.drv;
     base.setupPen = e.isPlayer ? setupPenalty(s.id, v, wk.setup) : U.rr(0, 0.28);
+    const m = wk.mods || {};
+    if (e.isPlayer) { base.perf += m.perf || 0; base.rel = U.clamp(base.rel + (m.rel || 0), 40, 99); }
+    if (e.isMate && m.mateBoost) base.drv = { ...base.drv, pace: base.drv.pace + m.mateBoost };
     base.qApproach = e.isPlayer ? wk.qApproach : U.pick(['attack', 'safe', 'safe', 'save']);
     if (e.isPlayer && plan) base.plan = plan;
     else base.plan = aiCircuitPlan(s, v, base);
@@ -259,37 +300,49 @@ function runQualifying() {
   const entries = buildCircuitEntries(null);
   const q = simQualifying(s, v, wk.weather, entries);
   wk.qual = { order: q.order.map(r => ({ id: r.id, time: r.time, gap: r.gap, mistake: r.mistake })), wet: q.wet };
+  const drop = (wk.mods || {}).gridDrop || 0;
+  wk.grid = wk.qual.order.map(r => r.id);
+  if (drop) {
+    const i = wk.grid.indexOf('P');
+    wk.grid.splice(i, 1);
+    wk.grid.splice(Math.min(wk.grid.length, i + drop), 0, 'P');
+  }
   wk.aiQ = Object.fromEntries(entries.map(e => [e.id, e.qApproach]));
-  wk.engNoise = U.rr(0.88, 1.12);
+  wk.engNoise = (wk.mods || {}).engExact ? 1 : U.rr(0.88, 1.12);
   wk.plan = defaultPlan();
   wk.stage = 'plan';
   saveGame();
 }
 
-function runRace() {
+function startLiveRace(live = true) {
   const s = curSeries(), wk = G.weekend, v = venueOf(s.id, wk.vid), S = G.season;
-  let res;
   if (s.kind === 'rally') {
     const crews = S.entries.map(e => {
       const t = teamOfEntry(e);
       return { id: e.id, name: e.name, short: e.short, team: t.name, isPlayer: e.isPlayer, perf: t.perf, rel: t.rel,
         drv: e.isPlayer ? playerDrv('rally') : e.drv, setupPen: e.isPlayer ? setupPenalty(s.id, v, wk.setup) : U.rr(0, 0.006),
-        plan: e.isPlayer ? { shakedown: wk.shakedown, loops: wk.plan.loops } : aiRallyPlan(s, v, wk.ev) };
+        plan: e.isPlayer ? { shakedown: wk.shakedown, loops: wk.plan.loops.map(x => ({ ...x })) } : aiRallyPlan(s, v, wk.ev) };
     });
     const order = S.round === 0 ? U.shuffle(S.entries.map(e => e.id)) : standings().map(x => x.e.id);
-    res = simRally(s, v, wk.ev, crews, order);
-  } else {
-    const entries = buildCircuitEntries(wk.plan);
-    for (const e of entries) if (!e.isPlayer) e.qApproach = wk.aiQ[e.id] || 'safe';
-    const grid = wk.qual.order.map(r => r.id);
-    const hours = ENDU_HOURS[S.round] || 6;
-    res = simRace(s, v, wk.weather, entries, grid, { hours, night: s.kind === 'endurance' && hours >= 24, double: s.kind === 'endurance' && hours >= 24 });
+    return createRally(s, v, wk.ev, crews, order, { live });
   }
+  const entries = buildCircuitEntries(wk.plan);
+  for (const e of entries) if (!e.isPlayer) e.qApproach = wk.aiQ[e.id] || 'safe';
+  const grid = wk.grid || wk.qual.order.map(r => r.id);
+  const hours = ENDU_HOURS[S.round] || 6;
+  return createRace(s, v, wk.weather, entries, grid, { hours, night: s.kind === 'endurance' && hours >= 24, double: s.kind === 'endurance' && hours >= 24, live });
+}
+
+function finalizeRace(res) {
+  const wk = G.weekend;
   wk.result = res;
   wk.stage = 'race';
   applyResult(res);
   saveGame();
 }
+
+// 指示を出さずに最後まで進める(テストや「結果へ」用)
+function runRace() { finalizeRace(startLiveRace(false).finishAll()); }
 
 function applyResult(res) {
   const S = G.season, s = curSeries(), wk = G.weekend, d = G.driver;
@@ -327,6 +380,61 @@ function finishWeekend() {
   G.season.round++;
   G.weekend = null;
   if (G.season.round >= G.season.cal.length) endSeason();
+  else G.season.event = U.chance(0.75) ? pickPaddockEvent() : null;
+  saveGame();
+}
+
+// ---- レースの合間の出来事 ----
+const PADDOCK_EVENTS = [
+  { id: 'sim', title: 'シミュレーターの枠が空いた', text: '次のコースを走り込める枠が取れた。ただ、同じ日に体のケアの予約も入っている。', options: [
+    { label: 'シミュレーターで走り込む', desc: 'フリー走行が1回増える。', mod: { runs: 1 } },
+    { label: '体を休める', desc: '次のレースでミスが減る。', mod: { cons: 5 } }] },
+  { id: 'parts', title: '新しいフロントウイングが届いた', text: '風洞の数字は良い。ただ、実際に走らせた人はまだいない。', options: [
+    { label: '新型を使う', desc: '当たれば速くなる。外れると遅くなる。', mod: { gamble: 'parts' } },
+    { label: '実績のある旧型で', desc: '何も変わらない。', mod: {} }] },
+  { id: 'sponsor', title: 'スポンサーのファンイベント', text: 'メインスポンサーが、週末のファンイベントに顔を出してほしいと言ってきた。', options: [
+    { label: '参加する', desc: '評価 +2。フリー走行は1回減る。', mod: { rep: 2, runs: -1 } },
+    { label: '断ってテストに集中', desc: '評価 −1。', mod: { rep: -1 } }] },
+  { id: 'press', title: '記者の質問', text: '「チームメイトと比べて、速いのはどっちですか?」とマイクを向けられた。', options: [
+    { label: '「僕です」と言い切る', desc: '評価 +2。ただしチームメイトが燃えて、次のレースは速くなる。', mod: { rep: 2, mateBoost: 4 } },
+    { label: '無難に答える', desc: '何も起きない。', mod: {} }] },
+  { id: 'train', title: 'レースまで少し間がある', text: '次の週末まで、まとまった時間が取れた。', options: [
+    { label: '体力トレーニング', desc: '安定感 +1', mod: { stat: ['cons', 1] } },
+    { label: 'カートで走り込む', desc: 'バトル +1', mod: { stat: ['craft', 1] } },
+    { label: 'タイヤの勉強会', desc: 'タイヤの扱い +1', mod: { stat: ['tyre', 1] } }] },
+  { id: 'weather', kinds: ['sprint', 'endurance'], title: '地元の気象予報士', text: 'このあたりの天気に詳しい予報士を紹介された。データ班も話を聞きたがっている。', options: [
+    { label: '予報士の話を聞く', desc: '今週末の予報が正確になる。', mod: { forecast: true } },
+    { label: 'データ班に時間を回す', desc: 'タイヤ寿命の見積もりが正確になる。', mod: { engExact: true } }] },
+  { id: 'engine', kinds: ['sprint'], title: 'エンジンの走行距離', text: 'エンジニア「エンジンの距離が伸びている。新品に替えると、決まりで5グリッド降格になる」', options: [
+    { label: '新品に替える', desc: 'グリッド5つ降格。壊れにくくなる。', mod: { gridDrop: 5, rel: 12 } },
+    { label: 'このまま使う', desc: '壊れる危険が少し上がる。', mod: { rel: -10 } }] },
+  { id: 'recce', kinds: ['rally'], title: 'レッキ(下見)の時間', text: '本番前の下見は限られた時間しかない。どこに時間を使うか。', options: [
+    { label: 'ペースノートを丁寧に作る', desc: '本番でのミスが減る。', mod: { cons: 6 } },
+    { label: 'セットアップの確認に回す', desc: 'シェイクダウンが1回増える。', mod: { runs: 1 } }] },
+  { id: 'rookie', title: '若手からの相談', text: 'ジュニアのドライバーが「走りを見てほしい」と頼んできた。', options: [
+    { label: '一日付き合う', desc: '評価 +1.5。フリー走行は1回減る。', mod: { rep: 1.5, runs: -1 } },
+    { label: '今は自分に集中する', desc: '何も起きない。', mod: {} }] },
+];
+
+function pickPaddockEvent() {
+  const kind = curSeries().kind;
+  const pool = PADDOCK_EVENTS.filter(e => !e.kinds || e.kinds.includes(kind)).filter(e => e.id !== G.season.lastEvent);
+  const e = U.pick(pool);
+  G.season.lastEvent = e.id;
+  return e.id;
+}
+function paddockEvent() { return G.season && G.season.event ? PADDOCK_EVENTS.find(e => e.id === G.season.event) : null; }
+function resolvePaddockEvent(i) {
+  const e = paddockEvent();
+  if (!e) return;
+  const o = e.options[i];
+  const m = { ...o.mod };
+  if (m.rep) G.driver.rep = U.clamp(G.driver.rep + m.rep, 0, 100);
+  if (m.stat) G.driver.stats[m.stat[0]] = Math.min(99, G.driver.stats[m.stat[0]] + m.stat[1]);
+  delete m.rep; delete m.stat;
+  G.season.mods = m;
+  G.season.event = null;
+  G.season.lastChoice = `${e.title}:${o.label}`;
   saveGame();
 }
 

@@ -41,19 +41,20 @@ function topbar() {
 }
 
 function render() {
-  if (App.play && App.play.timer) { clearInterval(App.play.timer); }
+  if (App.play) { clearTimeout(App.play.timer); clearTimeout(App.play.callTimer); cancelAnimationFrame(App.play.raf); }
   let body;
   if (!G) body = App.newForm ? newCareerScreen() : titleScreen();
   else if (G.retired) body = careerEndScreen();
   else if (G.offers) body = offersScreen();
   else if (G.weekend) {
     const st = G.weekend.stage;
-    if (st === 'setup') body = setupScreen();
+    if (App.race && App.play) body = raceScreen();
+    else if (st === 'setup') body = setupScreen();
     else if (st === 'plan') body = planScreen();
-    else body = App.play && App.play.live ? raceScreen() : resultScreen();
+    else body = resultScreen();
   } else body = hubScreen();
   App.el.innerHTML = (G || App.newForm ? topbar() : '') + `<main class="main">${body}</main>` + (App.help ? helpOverlay() : '') + (App.ask ? askOverlay() : '');
-  if (App.play && App.play.live && G && G.weekend && G.weekend.stage === 'race') startPlayback();
+  if (App.race && App.play && document.getElementById('lv-tower')) startPlayback();
 }
 
 // ---- 表紙 ----
@@ -143,17 +144,26 @@ function hubScreen() {
     const res = r ? (r.me.dnf ? '<span class="dnf">DNF</span>' : `P${r.me.pos}`) : i === S.round ? '<span class="next">NEXT</span>' : '';
     return `<tr class="${i === S.round ? 'cur' : ''}"><td class="n">R${i + 1}</td><td>${U.esc(eventName(s.id, i))}</td><td class="n b">${res}</td><td class="n">${r ? r.me.points || '' : ''}</td></tr>`;
   }).join('');
+  const pe = paddockEvent();
+  const eventCard = pe ? `<section class="panel event">
+      ${head('!', 'PADDOCK NEWS', 'レースの前に')}
+      <h3 class="ev-t">${U.esc(pe.title)}</h3>
+      <p class="ev-x">${U.esc(pe.text)}</p>
+      <div class="ev-opts">${pe.options.map((o, i) => `<button type="button" class="ev-o" data-act="pevent" data-arg="${i}"><b>${U.esc(o.label)}</b><span>${U.esc(o.desc)}</span></button>`).join('')}</div>
+    </section>` : '';
   return `<section class="hero">
       <div class="hero-l"><span class="kicker">${S.year} SEASON — ${tierLabel(s)}</span><h2>${U.esc(s.name)}</h2>
       <p>${U.esc(S.team)}・マシン ${grade(t.perf)}・信頼性 ${grade(t.rel)}・目標 シリーズ${S.target}位以内</p></div>
       <div class="hero-r"><span class="big">R${S.round + 1}</span><span class="of">/ ${S.cal.length}</span></div>
     </section>
+    ${eventCard}
     <div class="grid2">
       <section class="panel">
         ${head('01', 'NEXT ROUND', '次の戦い')}
         <h3 class="venue">${U.esc(eventName(s.id, S.round))}<small>${v.en}</small></h3>
         ${venueBlock(s, v)}
-        <button class="btn primary wide" data-act="weekend">週末を始める</button>
+        ${G.season.lastChoice && !pe ? `<p class="note">決めたこと:${U.esc(G.season.lastChoice)}</p>` : ''}
+        <button class="btn primary wide" data-act="weekend" ${pe ? 'disabled' : ''}>${pe ? '先に上の出来事を決める' : '週末を始める'}</button>
       </section>
       <section class="panel">
         ${head('02', 'STANDINGS', 'シリーズ順位')}
@@ -188,9 +198,10 @@ function helpOverlay() {
       <li><b>週末の流れ</b>:フリー走行でセットアップを探る → 予選の走り方を決める → 決勝の作戦を立てて送り出す。レースは自動で進み、実況と順位の推移で結果が分かる。</li>
       <li><b>セットアップ</b>:フリー走行は3回まで。ドライバーの感想を手がかりに、ウイングと足回りをコースに合わせる。ずれているほど毎周遅くなり、ミスも増える。</li>
       <li><b>タイヤ</b>:ソフトは速いが早く終わる。ハードは遅いが長持ち。寿命を超えると急に遅くなる。2種類の使用義務があるクラスもある。</li>
-      <li><b>雨とセーフティカー</b>:予報は外れることもある。雨への反応(早めに替える/様子を見る/賭ける)と、セーフティカー中にピットへ入るかを先に決めておく。</li>
+      <li><b>ピットの壁からの指示</b>:レース中、雨・セーフティカー・タイヤの限界・バトル・終盤では無線で指示を出す。15秒で答えないと、おすすめの案になる。「最後まで任せる」でチームに任せることもできる。</li>
       <li><b>耐久</b>:3人で1台。燃料補給の周回は決まっている。タイヤを毎回替えるか2スティント使うか、自分が何スティント乗るかを決める。</li>
       <li><b>ラリー</b>:1台ずつステージのタイムを競う。ループごとにタイヤ、スペアの本数、攻め方を決める。途中で止まっても、最終ループ以外なら5分加算で再出走できる。</li>
+      <li><b>レースの合間</b>:パドックでは出来事が起きる。選んだことが次の週末やドライバーに効いてくる。</li>
       <li><b>キャリア</b>:シーズンが終わると、成績と評価に応じてオファーが届く。チームの目標順位を上回ると評価が上がる。能力は走るたびに伸び、30代半ばから衰えていく。</li>
     </ol>
     <div class="row-end">${G ? '<button class="btn ghost" data-act="reset">最初からやり直す</button>' : ''}<button class="btn primary" data-act="closehelp">閉じる</button></div>

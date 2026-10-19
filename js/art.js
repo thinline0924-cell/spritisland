@@ -21,7 +21,7 @@ function catmullOpen(pts) {
   return d;
 }
 
-function trackSVG(venue, opts = {}) {
+function trackShape(venue) {
   const rnd = U.seeded('track-' + venue.id);
   const W = 320, H = 200, cx = W / 2, cy = H / 2;
   const n = 9 + Math.floor(rnd() * 5);
@@ -33,17 +33,21 @@ function trackSVG(venue, opts = {}) {
     if (rnd() < 0.25 + twist * 0.3) r *= 0.45 + rnd() * 0.25; // 内側に切れ込むヘアピン
     pts.push([cx + Math.cos(a) * r * W * 0.44, cy + Math.sin(a) * r * H * 0.42]);
   }
-  const d = catmullClosed(pts);
-  const sf = pts[0];
-  const cls = opts.cls || '';
-  return `<svg class="track ${cls}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(venue.name)}のコース図">
-    <path d="${d}" class="t-out"/><path d="${d}" class="t-in"/>
-    <line x1="${sf[0] - 9}" y1="${sf[1]}" x2="${sf[0] + 9}" y2="${sf[1]}" class="t-sf"/>
-    <text x="${sf[0] + 12}" y="${sf[1] - 6}" class="t-lab">S/F</text>
-  </svg>`;
+  return { d: catmullClosed(pts), sf: pts[0] };
 }
 
-function rallySVG(rally, stages) {
+// コースの線(インクの影 + 紙色の路面)
+function trackLines(d, sf) {
+  return `<path d="${d}" class="t-shadow" transform="translate(5,5)"/><path d="${d}" class="t-out"/><path d="${d}" class="t-in"/>
+    <rect x="${sf[0] - 5}" y="${sf[1] - 11}" width="10" height="22" class="t-sf"/>`;
+}
+
+function trackSVG(venue, opts = {}) {
+  const { d, sf } = trackShape(venue);
+  return `<svg class="track ${opts.cls || ''}" viewBox="0 0 320 200" role="img" aria-label="${U.esc(venue.name)}のコース図">${trackLines(d, sf)}</svg>`;
+}
+
+function rallyShape(rally) {
   const rnd = U.seeded('rally-' + rally.id);
   const W = 320, H = 200;
   const pts = [];
@@ -54,11 +58,18 @@ function rallySVG(rally, stages) {
     x += (W - 36) / (n - 1);
     y = U.clamp(y + (rnd() - 0.5) * 90 * (0.5 + rally.rough), 18, H - 18);
   }
-  const d = catmullOpen(pts);
-  const ticks = [0, 4, 9, 13].map((k, i) => `<circle cx="${pts[k][0].toFixed(1)}" cy="${pts[k][1].toFixed(1)}" r="4" class="t-dot"/>`).join('');
-  return `<svg class="track" viewBox="0 0 ${W} ${H}" role="img" aria-label="${U.esc(rally.name)}のステージ図">
-    <path d="${d}" class="t-out r"/><path d="${d}" class="t-dash"/>${ticks}
-  </svg>`;
+  return { d: catmullOpen(pts), pts };
+}
+
+function rallyLines(d, pts) {
+  const a = pts[0], b = pts[pts.length - 1];
+  return `<path d="${d}" class="t-shadow r" transform="translate(5,5)"/><path d="${d}" class="t-out r"/><path d="${d}" class="t-dash"/>
+    <circle cx="${a[0].toFixed(1)}" cy="${a[1].toFixed(1)}" r="6" class="t-dot"/><rect x="${(b[0] - 6).toFixed(1)}" y="${(b[1] - 6).toFixed(1)}" width="12" height="12" class="t-sf"/>`;
+}
+
+function rallySVG(rally) {
+  const { d, pts } = rallyShape(rally);
+  return `<svg class="track" viewBox="0 0 320 200" role="img" aria-label="${U.esc(rally.name)}のステージ図">${rallyLines(d, pts)}</svg>`;
 }
 
 // 表紙:ピットの建物と外階段(参考画像の雰囲気を借りた線画)
@@ -90,6 +101,7 @@ function titleArt() {
   const board = `<rect x="${bx + 30}" y="${by - 14}" width="${bw - 60}" height="14" class="a-board"/>
     <text x="${bx + bw / 2}" y="${by - 3.5}" class="a-boardtxt">1:31.402</text>`;
   return `<svg class="title-art" viewBox="0 0 300 240" aria-hidden="true">
+    <rect x="${bx + 7}" y="${by + 7}" width="${bw}" height="${bh}" class="a-shadow"/>
     <rect x="${bx}" y="${by}" width="${bw}" height="${bh}" class="a-wall"/>${grid}${doors}${board}${stairs}
   </svg>`;
 }

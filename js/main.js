@@ -58,15 +58,24 @@ const ACT = {
     normPlan(p, s); saveGame(); render();
   },
   delstop(i) { const p = G.weekend.plan; p.stops.splice(Number(i), 1); normPlan(p, curSeries()); saveGame(); render(); },
-  race() { runRace(); App.play = { live: true, idx: 0, speed: 1 }; window.scrollTo(0, 0); render(); },
+  race() { App.race = startLiveRace(true); App.play = { speed: 1 }; window.scrollTo(0, 0); render(); },
   speed(x) {
     App.play.speed = Number(x);
     document.querySelectorAll('.spd').forEach(b => b.classList.toggle('on', b.dataset.arg === x));
-    if (App.play.timer) startPlayback();
   },
-  skip() { clearInterval(App.play.timer); App.play = null; window.scrollTo(0, 0); render(); },
-  replay() { App.play = { live: true, idx: 0, speed: 3 }; window.scrollTo(0, 0); render(); },
-  done() { App.play = null; finishWeekend(); window.scrollTo(0, 0); render(); },
+  callans(i) { answerCall(i); },
+  skip() {
+    const R = App.race, P = App.play;
+    clearTimeout(P.timer); clearTimeout(P.callTimer);
+    R.finishAll();
+    if (!R.replay && !P.finalized) { P.finalized = true; finalizeRace(R.result); }
+    ACT.toresult();
+  },
+  toresult() { App.race = null; App.play = null; window.scrollTo(0, 0); render(); },
+  replay() { App.race = replayOf(G.weekend.result); App.play = { speed: 3 }; window.scrollTo(0, 0); render(); },
+  done() { App.race = null; App.play = null; finishWeekend(); window.scrollTo(0, 0); render(); },
+  pevent(i) { resolvePaddockEvent(Number(i)); render(); },
+  autosetup() { autoSetup(); render(); },
 };
 
 document.addEventListener('click', e => {
@@ -85,6 +94,7 @@ document.addEventListener('change', e => {
   }
 });
 document.addEventListener('keydown', e => {
+  if (App.race && App.race.call && /^[1-4]$/.test(e.key)) { const b = document.querySelectorAll('.call-o')[Number(e.key) - 1]; if (b) b.click(); return; }
   if (e.key !== 'Escape') return;
   if (App.ask) { App.ask = null; render(); } else if (App.help) { App.help = false; render(); }
 });

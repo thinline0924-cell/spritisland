@@ -59,7 +59,8 @@ function aiRallyPlan(series, rally, ev) {
   return { shakedown: U.pick(['push', 'careful']), loops };
 }
 
-function simRally(series, rally, ev, crews, startOrder) {
+// ラリー本番。1ステージずつ進める。live のときは、サービスパークとパンクの場面で指示を待つ。
+function createRally(series, rally, ev, crews, startOrder, opts = {}) {
   const events = [], snaps = [];
   const say = (stage, text, kind = 'info', player = false) => events.push({ lap: stage, text, kind, player });
   const st = crews.map(c => ({ c, id: c.id, total: 0, dnf: false, damage: 0, spares: 0, outLoop: false, mistakes: 0, stageWins: 0, superRally: false }));
@@ -67,10 +68,11 @@ function simRally(series, rally, ev, crews, startOrder) {
   const nm = s => s.c.short || s.c.name;
   const nLoops = series.loops;
   let lastLoop = -1;
+  const R = { events, snaps, live: !!opts.live, call: null, done: false, result: null, si: 0, svc: {}, punct: {}, laps: ev.stages.length, rally: true };
+  const me = st.find(s => s.c.isPlayer);
 
-  ev.stages.forEach((stage, si) => {
-    const l = stage.loop;
-    const rain = ev.loopRain[l];
+  function loopStart(stage) {
+    const l = stage.loop, rain = ev.loopRain[l];
     if (l !== lastLoop) {
       for (const s of st) {
         if (s.dnf) continue;
@@ -81,6 +83,13 @@ function simRally(series, rally, ev, crews, startOrder) {
       else if (rain > 0) say(stage.no, '雨。砂利がぬかるみ、轍が深くなる。', 'weather');
       lastLoop = l;
     }
+  }
+
+  function runStage(si) {
+    const stage = ev.stages[si];
+    const l = stage.loop;
+    const rain = ev.loopRain[l];
+    loopStart(stage);
     const k = ev.stages.filter(x => x.loop === l && x.no < stage.no).length;
     const times = {};
     for (const s of st) {
@@ -96,8 +105,16 @@ function simRally(series, rally, ev, crews, startOrder) {
       m *= 1 + U.gauss() * 0.005;
       let t = stage.km * SPK[rally.surface] * m;
       // パンク
-      const pP = rally.rough * 0.06 * pace.punct * (lp.tyre === 'soft' ? 1.3 : lp.tyre === 'hard' ? 0.8 : 1) * (stage.km / 15);
-      if (U.chance(pP)) {
+      const pP = punctP(lp, stage);
+      const pre = c.isPlayer ? R.punct[si] : undefined;
+      if (pre) {
+        if (!pre.none) {
+          t += pre.extra;
+          if (pre.useSpare && s.spares > 0) s.spares--;
+          say(stage.no, pre.text, 'mistake', true);
+          if (pre.retire) { retire(s, stage, 'パンクでホイールを壊した'); continue; }
+        }
+      } else if (U.chance(pP)) {
         if (s.spares > 0) {
           const loss = U.rr(15, 45); t += loss; s.spares--;
           say(stage.no, `${nm(s)}がパンク。そのまま走り切って${Math.round(loss)}秒ロス。スペアを1本使う。`, 'mistake', c.isPlayer);
@@ -154,7 +171,73 @@ function simRally(series, rally, ev, crews, startOrder) {
       stage: Object.fromEntries(Object.entries(times)),
       dnf: st.filter(s => s.dnf).map(s => s.id), pit: [], tyre: {}, age: {},
     });
-  });
+  }
+
+  function punctP(lp, stage) {
+    return rally.rough * 0.06 * RALLY_PACE[lp.pace].punct * (lp.tyre === 'soft' ? 1.3 : lp.tyre === 'hard' ? 0.8 : 1) * (stage.km / 15);
+  }
+
+  // ---- 指示 ----
+  function standingLine() {
+    const last = snaps[snaps.length - 1];
+    if (!last || !me || me.dnf) return '';
+    const ord = last.order.filter(id => !last.dnf.includes(id));
+    const i = ord.indexOf(me.id);
+    const a = ord[i - 1], b = ord[i + 1];
+    return `総合${i + 1}位。` + (a ? `前の${nm(byId[a])}と${(last.gap[me.id] - last.gap[a]).toFixed(1)}秒。` : 'トップを走っている。') + (b ? `後ろの${nm(byId[b])}とは${(last.gap[b] - last.gap[me.id]).toFixed(1)}秒。` : '');
+  }
+  function serviceCall(l, stage) {
+    if (!me || me.dnf) return;
+    const lp = me.c.plan.loops[l];
+    const keys = ['flat', 'normal', 'careful'];
+    const desc = { flat: '速いがミスとパンクが増える。', normal: '計画どおりの攻め方。', careful: '遅いが確実に走り切る。' };
+    R.call = { kind: 'service', lap: stage.no, title: `サービスパーク — ループ${l + 1}へ`,
+      text: `${standingLine()} 次のループは${RALLY_TYRES[rally.surface].find(x => x[0] === lp.tyre)[1]}タイヤ、スペア${lp.spares}本。${ev.loopRain[l] > 0 ? '雨が降っている。' : ''}`,
+      options: keys.map(k => ({ label: `${RALLY_PACE[k].name}で行く`, desc: desc[k], apply: () => { lp.pace = k; } })), def: keys.indexOf(lp.pace) };
+  }
+  function prePunct(stage, si) {
+    if (!me || me.dnf || me.outLoop) { R.punct[si] = { none: true }; return; }
+    loopStart(stage);
+    const lp = me.c.plan.loops[stage.loop];
+    if (!U.chance(punctP(lp, stage))) { R.punct[si] = { none: true }; return; }
+    const at = (stage.km * U.rr(0.2, 0.8)).toFixed(1);
+    const set = o => () => { R.punct[si] = o; };
+    const nmMe = nm(me);
+    const opts = me.spares > 0 ? [
+      { label: '止まって交換する', desc: '確実だが1分以上かかる。', apply: () => { const x = U.rr(60, 85); set({ extra: x, useSpare: true, text: `${nmMe}は止まってタイヤを交換。${Math.round(x)}秒ロス。` })(); } },
+      { label: 'そのまま走り切る', desc: '速いが、ホイールを傷める恐れがある。', apply: () => {
+        const x = U.rr(15, 45), hurt = U.chance(0.2), y = hurt ? U.rr(40, 90) : 0;
+        set({ extra: x + y, useSpare: true, text: hurt ? `パンクのまま走ったがホイールを傷めた。${Math.round(x + y)}秒ロス。` : `パンクしたまま走り切った。${Math.round(x)}秒ロス。` })(); } },
+    ] : [
+      { label: 'ゆっくり走り切る', desc: 'スペアが無い。時間はかかるが、たぶん走り切れる。', apply: () => { const x = U.rr(90, 200), r = U.chance(0.1); set({ extra: x, retire: r, text: `スペアなしで這うように走り切った。${Math.round(x)}秒ロス。` })(); } },
+      { label: '全開で走り切る', desc: 'ロスは小さいが、リタイアの危険が大きい。', apply: () => { const x = U.rr(40, 90), r = U.chance(0.4); set({ extra: x, retire: r, text: `パンクのまま全開。${Math.round(x)}秒ロス。` })(); } },
+    ];
+    R.call = { kind: 'puncture', lap: stage.no, title: 'パンク', text: `SS${stage.no} ${stage.name}、${at}km地点で左リアがパンク。スペアは残り${me.spares}本。`, options: opts, def: 0 };
+  }
+
+  R.step = () => {
+    if (R.done || R.call) return null;
+    const stage = ev.stages[R.si];
+    if (R.live && stage.loop > 0 && !R.svc[stage.loop]) { R.svc[stage.loop] = true; serviceCall(stage.loop, stage); if (R.call) return null; }
+    if (R.live && R.punct[R.si] === undefined) { prePunct(stage, R.si); if (R.call) return null; }
+    runStage(R.si);
+    R.si++;
+    if (R.si >= ev.stages.length) finish();
+    return snaps[snaps.length - 1];
+  };
+  R.answer = i => {
+    const call = R.call;
+    if (!call) return;
+    const o = call.options[i] || call.options[call.def];
+    o.apply();
+    say(call.lap, `指示:${o.label}`, 'call', true);
+    R.call = null;
+  };
+  R.finishAll = () => {
+    R.live = false;
+    while (!R.done) { if (R.call) R.answer(R.call.def); R.step(); }
+    return R.result;
+  };
 
   function retire(s, stage, why) {
     const finalLoop = stage.loop === nLoops - 1;
@@ -168,6 +251,7 @@ function simRally(series, rally, ev, crews, startOrder) {
     }
   }
 
+  function finish() {
   const fin = st.filter(s => !s.dnf).sort((a, b) => a.total - b.total);
   const out = st.filter(s => s.dnf);
   const classification = [...fin, ...out].map((s, i) => ({
@@ -175,5 +259,12 @@ function simRally(series, rally, ev, crews, startOrder) {
     points: !s.dnf && i < 10 ? POINTS[i] : 0, stageWins: s.stageWins, mistakes: s.mistakes, superRally: s.superRally, grid: startOrder.indexOf(s.id) + 1,
   }));
   if (fin.length) say(ev.stages.length, `最終ステージを終えて、${nm(fin[0])}が優勝。`, 'finish');
-  return { classification, snaps, events, laps: ev.stages.length, rally: true };
+  R.result = { classification, snaps, events, laps: ev.stages.length, rally: true };
+  R.done = true;
+  }
+  return R;
+}
+
+function simRally(series, rally, ev, crews, startOrder) {
+  return createRally(series, rally, ev, crews, startOrder, { live: false }).finishAll();
 }
