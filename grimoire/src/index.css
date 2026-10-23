@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #07060c;
+  --color-parchment: #e9dcc0;
+  --color-ember: #ff8a3d;
+  --color-arcane: #b48cff;
+  --font-mono: "SFMono-Regular", Menlo, Consolas, "Noto Sans Mono CJK JP", monospace;
+}
+
+html, body { margin: 0; height: 100%; background: var(--color-ink); color: var(--color-parchment); overflow: hidden; }
+#stage, #ui { position: fixed; inset: 0; }
+#stage canvas { display: block; }
+#ui { pointer-events: none; }
+#ui > * { pointer-events: auto; }
