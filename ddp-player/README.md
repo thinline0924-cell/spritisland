@@ -5,6 +5,11 @@ CD マスターの **DDP(Disc Description Protocol 2.0)ファイルセット** �
 
 ## 使い方
 
+**ウェブで使う**:https://claude.ai/artifact/6SrrRTikB8GLaSzG1TQsmB を開くだけで使えます(最初は公開した人だけが開けます。ほかの人に使ってもらうときは、ページの「共有」から共有してください)。
+開いた直後はお試し用のサンプル(3曲)が読み込まれていて、そのまま再生できます。
+
+**パソコンで使う**:
+
 1. `ddp-player/index.html` をブラウザ(Chrome・Edge・Firefox・Safari)で開く
    - パソコンでダブルクリックして直接開いて大丈夫です(Web サーバーは要りません)
    - Render などで公開している場合は `https://<公開先>/ddp-player/` でも開けます
@@ -71,6 +76,8 @@ CD マスターの **DDP(Disc Description Protocol 2.0)ファイルセット** �
 | `js/player.js` | 再生エンジン(Web Audio で少しずつ読みながら再生) |
 | `js/md5.js` | MD5 の計算(少しずつデータを渡せる版) |
 | `js/app.js` | ファイルの読み込み・検証・画面の表示・操作 |
+| `js/sample.js` | お試し用のサンプル DDP をブラウザの中で作る(最初に自動で開く) |
+| `tools/build-web.js` | ウェブ公開用に CSS と JavaScript を1つの HTML にまとめる(`node tools/build-web.js <出力ファイル>`) |
 | `test/make-sample-ddp.js` | テスト用の DDP を作る(`node test/make-sample-ddp.js <フォルダ>`) |
 | `test/run.js` | 読み取り部分のテスト(`node test/run.js`) |
 | `test/e2e.js` | ブラウザでの動作テスト(Playwright が必要。`node test/e2e.js`) |

@@ -20,7 +20,15 @@ async function openSet(page, dir) {
   await page.goto(PAGE);
   const files = fs.readdirSync(dir).map((n) => path.join(dir, n));
   await page.setInputFiles('#pick-files', files);
-  await page.waitForSelector('#disc:not([hidden])');
+  await waitOpened(page);
+}
+
+// 最初に自動で開くサンプルから、選んだ DDP に入れかわるのを待つ
+async function waitOpened(page) {
+  await page.waitForFunction(() => {
+    const disc = document.getElementById('disc');
+    return !disc.hidden && document.getElementById('sample-note').hidden;
+  });
 }
 
 async function waitVerify(page) {
@@ -151,6 +159,17 @@ const text = (page, sel) => page.textContent(sel).then((s) => s.trim());
     assert.match(await text(page, '#diagnostics'), /CD-TEXT/);
   });
 
+  await test('最初はサンプルが開いていて、そのまま再生・検証できる', async (page) => {
+    await page.goto(PAGE);
+    await page.waitForSelector('#sample-note:not([hidden])');
+    assert.strictEqual(await text(page, '#album-title'), sample.ALBUM.title);
+    assert.match(await waitVerify(page), /6 個すべて一致|5 個すべて一致/);
+    await page.click('#b-play');
+    await page.waitForTimeout(1300);
+    assert.match(await text(page, '#d-time'), /^00:0[01]$/);
+    assert.ok(parseFloat(await text(page, '#mt-l')) > -7);
+  });
+
   await test('DDP でないものを開くと説明が出る', async (page) => {
     await page.goto(PAGE);
     const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ddp-e2e-'));
@@ -164,7 +183,7 @@ const text = (page, sel) => page.textContent(sel).then((s) => s.trim());
     sample.make(path.join(root, 'MASTER'));
     await page.goto(PAGE);
     await page.setInputFiles('#pick-dir', root);
-    await page.waitForSelector('#disc:not([hidden])');
+    await waitOpened(page);
     assert.strictEqual(await page.locator('#track-rows tr').count(), 3);
   });
 

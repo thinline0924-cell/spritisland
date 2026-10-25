@@ -19,12 +19,14 @@
       <div class="drop-buttons">
         <label class="btn primary">フォルダを選ぶ<input type="file" id="pick-dir" webkitdirectory directory multiple hidden></label>
         <label class="btn">ファイルを選ぶ<input type="file" id="pick-files" multiple hidden></label>
+        <button type="button" id="open-sample" class="btn">サンプルを開く</button>
       </div>
     </section>
 
     <div id="message" class="message" role="alert" hidden></div>
 
     <section id="disc" hidden>
+      <p id="sample-note" class="sample-note" hidden>いま開いているのは、お試し用に自動で作った<strong>サンプル</strong>(3曲・サイン波の音)です。自分の DDP は、フォルダをドロップするか「フォルダを選ぶ」で開いてください。</p>
       <div class="disc-head">
         <div class="album">
           <div id="album-title" class="album-title"></div>
@@ -134,6 +136,7 @@
   <script src="js/md5.js"></script>
   <script src="js/ddp.js"></script>
   <script src="js/player.js"></script>
+  <script src="js/sample.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

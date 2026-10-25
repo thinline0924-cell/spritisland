@@ -285,7 +285,7 @@
 
   // ---------- 開く ----------
 
-  async function open(list) {
+  async function open(list, opts = {}) {
     hideMessage();
     let set;
     try {
@@ -299,6 +299,7 @@
     showMessage('読み込んでいます…', 'info');
     try {
       const disc = await buildDisc(set);
+      disc.sample = !!opts.sample;
       state.disc = disc;
       state.player.setSource({
         read: (f, c) => readFrames(disc, f, c),
@@ -560,6 +561,7 @@
     $('album-title').textContent = album.title || 'タイトルなし(CD-TEXT なし)';
     $('album-artist').textContent = album.performer || '';
     $('folder-name').textContent = 'フォルダ: ' + (d.dir || '(選んだファイル)');
+    $('sample-note').hidden = !d.sample;
 
     const meta = $('disc-meta');
     meta.textContent = '';
@@ -860,6 +862,7 @@
       if (e.target.files.length) open(listFromInput(e.target.files));
       e.target.value = '';
     });
+    $('open-sample').addEventListener('click', openSample);
     $('pick-files').addEventListener('change', (e) => {
       if (e.target.files.length) open(listFromInput(e.target.files));
       e.target.value = '';
@@ -951,6 +954,13 @@
 
     setupSeek();
     requestAnimationFrame(tick);
+    // 最初はお試し用のサンプルを開いておく(自分の DDP を開くと入れかわる)
+    openSample();
+  }
+
+  function openSample() {
+    if (!window.DDPSample) return;
+    open(DDPSample.build('サンプル'), { sample: true });
   }
 
   setup();
