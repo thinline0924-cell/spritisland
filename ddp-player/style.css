@@ -60,6 +60,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 body {
   margin: 0;
@@ -115,6 +116,8 @@ main { max-width: 1100px; margin: 0 auto; padding-block: 10px 40px; }
 .message { margin: 12px 0; padding: 10px 14px; border-radius: 8px; font-size: 14px; }
 .message.error { background: var(--bad-soft); color: var(--bad); }
 .message.info { background: var(--accent-soft); color: var(--accent); }
+.add-audio { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; margin: -4px 0 12px; }
+.add-audio .hint { flex: 1 1 240px; min-width: 0; }
 
 .drop-overlay {
   position: fixed; inset: 0; z-index: 10;

@@ -343,7 +343,8 @@
   function missingAudioText(disc) {
     const names = disc.missingAudio.map((a) => `「${a.name}」${a.bytes ? `(${formatBytes(a.bytes)})` : ''}`).join('、');
     return `音声データ ${names || ''} が見つからないため、再生できません(曲の一覧と検証だけ表示しています)。` +
-      `DDPID・DDPMS・PQDESCR と同じフォルダにある、この名前のファイルも一緒に選んでください。フォルダごと選ぶか、ドロップするのが確実です。`;
+      `曲の情報(DDPID・DDPMS・PQDESCR など)だけでは音は出せません。音はこのファイルに入っています。` +
+      `下の「追加で選ぶ」でこのファイルだけを選ぶか、DDP のフォルダごと開き直してください。`;
   }
 
   function makeSegment(ref, startSector, diags) {
@@ -393,6 +394,10 @@
   // ---------- 開く ----------
 
   async function open(list, opts = {}) {
+    // 音声データが足りない DDP を開いているときに、DDPMS を含まないファイルが来たら「追加」として扱う
+    if (state.current && state.disc && state.disc.noAudio && !list.some((x) => nameScore(baseName(x.path), 'DDPMS'))) {
+      list = mergeFiles(state.current, list);
+    }
     // あとから開いたものを優先する(先に始めた読み込みが遅れて終わっても使わない)
     const myOpen = ++state.openToken;
     hideMessage();
@@ -411,6 +416,7 @@
       const disc = await buildDisc(set);
       if (myOpen !== state.openToken) return;
       disc.sample = !!opts.sample;
+      state.current = { list, dir: set.dir };
       state.disc = disc;
       state.player.setSource({
         read: (f, c) => readFrames(disc, f, c),
@@ -421,11 +427,21 @@
       hideMessage();
       render();
       if (disc.noAudio) showMessage(missingAudioText(disc));
+      $('add-audio').hidden = !disc.noAudio;
+      $('add-audio-label').textContent = disc.noAudio && disc.missingAudio.length === 1 ? `${disc.missingAudio[0].name} を追加で選ぶ` : '音声データを追加で選ぶ';
       analyze(disc);
     } catch (e) {
       console.error(e);
       if (myOpen === state.openToken) showMessage(e.message || String(e));
     }
+  }
+
+  // いま開いている DDP のフォルダに、あとから選んだファイルを加える(同じ名前なら入れかえる)
+  function mergeFiles(current, added) {
+    const prefix = current.dir ? current.dir + '/' : '';
+    const addedList = added.map((x) => ({ path: prefix + baseName(x.path), file: x.file }));
+    const names = new Set(addedList.map((x) => baseName(x.path).toUpperCase()));
+    return current.list.filter((x) => !names.has(baseName(x.path).toUpperCase())).concat(addedList);
   }
 
   // ---------- 検証(MD5 とピーク) ----------
@@ -996,6 +1012,10 @@
       e.target.value = '';
     });
     $('open-sample').addEventListener('click', openSample);
+    $('pick-more').addEventListener('change', (e) => {
+      if (e.target.files.length && state.current) open(mergeFiles(state.current, listFromInput(e.target.files)));
+      e.target.value = '';
+    });
     $('pick-files').addEventListener('change', (e) => {
       if (e.target.files.length) open(listFromInput(e.target.files));
       e.target.value = '';

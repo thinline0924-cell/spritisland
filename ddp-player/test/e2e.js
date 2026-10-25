@@ -183,6 +183,22 @@ const text = (page, sel) => page.textContent(sel).then((s) => s.trim());
     assert.strictEqual(await text(page, '#d-time'), '00:00');
   });
 
+  await test('足りない IMAGE.DAT をあとから追加して再生できる', async (page) => {
+    const dir = makeSet();
+    const extra = fs.mkdtempSync(path.join(os.tmpdir(), 'ddp-e2e-'));
+    fs.renameSync(path.join(dir, 'IMAGE.DAT'), path.join(extra, 'IMAGE.DAT'));
+    await openSet(page, dir);
+    await page.waitForSelector('#add-audio:not([hidden])');
+    assert.match(await text(page, '#add-audio-label'), /IMAGE\.DAT/);
+    await page.setInputFiles('#pick-more', [path.join(extra, 'IMAGE.DAT')]);
+    await page.waitForSelector('#add-audio', { state: 'hidden' });
+    assert.ok(await page.evaluate(() => document.getElementById('message').hidden));
+    assert.match(await waitVerify(page), /5 個すべて一致/);
+    await page.click('#b-play');
+    await page.waitForTimeout(1500);
+    assert.ok(parseFloat(await text(page, '#mt-l')) > -7);
+  });
+
   await test('名前の前に文字が付いていても開ける(9cc92fc6-DDPMS など)', async (page) => {
     const dir = makeSet();
     for (const n of fs.readdirSync(dir)) fs.renameSync(path.join(dir, n), path.join(dir, 'a1b2c3d4-' + n));
