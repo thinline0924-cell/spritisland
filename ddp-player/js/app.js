@@ -10,6 +10,7 @@
     disc: null,
     player: null,
     analysisToken: 0,
+    openToken: 0,
     peakHold: [0, 0],
     peakHoldAt: [0, 0],
     overUntil: [0, 0],
@@ -73,106 +74,134 @@
     return out;
   }
 
+  // ファイル名が DDP の名前に当てはまるか(小さいほどよく当てはまる。0 は当てはまらない)
+  //   1: そのまま(DDPMS) 2: 前に何か付いている(9cc92fc6-DDPMS) 3: 拡張子が付いている(IMAGE.DAT → IMAGE.DAT.DAT など)
+  // 大文字・小文字と、ダウンロードの重複でつく「 (1)」は区別しない
+  function nameScore(fileName, wanted) {
+    if (!fileName || !wanted) return 0;
+    const f = fileName.toUpperCase().replace(/\s*\(\d+\)(?=\.[^.]*$|$)/, '');
+    const w = wanted.toUpperCase();
+    if (f === w) return 1;
+    if (f.endsWith(w) && /[-_ .]$/.test(f.slice(0, f.length - w.length))) return 2;
+    if (f.startsWith(w + '.') && f.length - w.length <= 5) return 3;
+    return 0;
+  }
+
+  function findByName(refs, wanted, used) {
+    let best = null;
+    let bestScore = 99;
+    for (const r of refs) {
+      if (used && used.has(r)) continue;
+      const sc = nameScore(r.name, wanted);
+      if (sc && sc < bestScore) {
+        best = r;
+        bestScore = sc;
+      }
+    }
+    return best;
+  }
+
+  // 小さなファイルの先頭4バイト(DDPMS は "VVVM"、PQDESCR は "VVVS"、DDPID は "DDP ")
+  async function readHead(ref) {
+    if (ref.head === undefined) {
+      ref.head = ref.file.size <= 64 * 1024 ? String.fromCharCode(...(await readBytes(ref.file, 0, 4))) : '';
+    }
+    return ref.head;
+  }
+
+  async function findByHead(refs, magic, used) {
+    for (const r of refs) {
+      if (used && used.has(r)) continue;
+      if ((await readHead(r)) === magic) return r;
+    }
+    return null;
+  }
+
+  const isChecksumName = (name) => /\.MD5$/i.test(name) || /^(?:.*[-_ ])?(CHECKSUMS?|MD5SUMS?)(\.TXT)?$/i.test(name);
+
   // 一覧の中から DDP のファイルセット(DDPMS があるフォルダ)を探す
-  function pickFileset(list) {
-    const ddpms = list.filter((x) => baseName(x.path).toUpperCase() === 'DDPMS').sort((a, b) => a.path.localeCompare(b.path));
+  async function pickFileset(list) {
+    const refs = list.map((x) => ({ name: baseName(x.path), path: x.path, file: x.file }));
+    let ddpms = refs.filter((r) => nameScore(r.name, 'DDPMS')).sort((a, b) => nameScore(a.name, 'DDPMS') - nameScore(b.name, 'DDPMS') || a.path.localeCompare(b.path));
     if (!ddpms.length) {
-      if (list.some((x) => /\.zip$/i.test(x.path))) {
+      // 名前が違っていても、中身が DDPMS なら使う
+      const found = await findByHead(refs.slice(0, 2000), 'VVVM');
+      if (found) ddpms = [found];
+    }
+    if (!ddpms.length) {
+      if (refs.some((r) => /\.zip$/i.test(r.name))) {
         throw new Error('ZIP ファイルのままでは開けません。展開(解凍)してから、中のフォルダを開いてください。');
       }
-      throw new Error('DDPMS が見つかりません。DDP のファイル(DDPID・DDPMS・PQDESCR・IMAGE.DAT など)が入ったフォルダを開いてください。');
+      throw new Error('DDPMS が見つかりません。DDP のファイル(DDPID・DDPMS・PQDESCR と音声データ)が入ったフォルダを開いてください。');
     }
     const dir = dirName(ddpms[0].path);
-    const files = new Map();
-    for (const x of list) {
-      if (dirName(x.path) === dir) files.set(baseName(x.path).toUpperCase(), { name: baseName(x.path), file: x.file });
-    }
-    return { dir, files, others: ddpms.slice(1).map((x) => dirName(x.path) || '(最上位)') };
+    const others = [...new Set(ddpms.slice(1).map((r) => dirName(r.path)).filter((d) => d !== dir))];
+    return { dir, refs: refs.filter((r) => dirName(r.path) === dir), ddpms: ddpms[0], others: others.map((d) => d || '(最上位)') };
   }
 
   // ---------- DDP を組み立てる ----------
 
   async function buildDisc(set) {
     const diags = [];
-    const get = (name) => (name ? set.files.get(name.toUpperCase()) : undefined);
+    const refs = set.refs;
+    const used = new Set();
+    const take = (ref, role) => {
+      if (!ref) return null;
+      used.add(ref);
+      ref.role = role;
+      if (nameScore(ref.name, role) !== 1) {
+        diags.push({ level: 'info', text: `「${ref.name}」を ${role} として読みました(名前が少し違います)` });
+      }
+      return ref;
+    };
     if (set.others.length) {
       diags.push({ level: 'info', text: `DDP が複数見つかったので「${set.dir || '(最上位)'}」を開きました(ほかに: ${set.others.join('、')})` });
     }
 
-    const ms = DDP.parseDDPMS(await readAll(get('DDPMS').file));
+    const msRef = take(set.ddpms, 'DDPMS');
+    const ms = DDP.parseDDPMS(await readAll(msRef.file));
     diags.push(...ms.warnings);
     if (!ms.entries.length) throw new Error('DDPMS の中身が読めません。ファイルが壊れている可能性があります。');
 
+    const checksumRefs = refs.filter((r) => isChecksumName(r.name) && r.file.size <= 1024 * 1024);
+    checksumRefs.forEach((r) => used.add(r));
+
+    // 名前で探し、なければ中身で探す
+    const findStream = async (names, magic) => {
+      for (const n of names) {
+        const r = findByName(refs, n, used);
+        if (r) return take(r, names[0]);
+      }
+      if (magic) {
+        const r = await findByHead(refs, magic, used);
+        if (r) return take(r, names[0]);
+      }
+      return null;
+    };
+
+    const idRef = await findStream(['DDPID'], 'DDP ');
     let ddpid = null;
-    if (get('DDPID')) {
-      ddpid = DDP.parseDDPID(await readAll(get('DDPID').file));
+    if (idRef) {
+      ddpid = DDP.parseDDPID(await readAll(idRef.file));
       diags.push(...ddpid.warnings);
     } else {
       diags.push({ level: 'warn', text: 'DDPID がありません' });
     }
 
-    const findStream = (entry, fallback) => {
-      if (entry) {
-        for (const n of [entry.dsi, entry.dsiLong]) if (get(n)) return get(n);
-      }
-      return get(fallback);
-    };
-
     // PQ(曲の位置)
     const pqEntry = ms.entries.find((e) => /PQ/i.test(e.sub) || /^PQDESCR$/i.test(e.dsi));
-    const pqRef = findStream(pqEntry, 'PQDESCR');
-    if (!pqRef) throw new Error('PQDESCR(曲の位置の情報)が見つかりません。');
+    const pqRef = await findStream([pqEntry ? pqEntry.dsi : 'PQDESCR', pqEntry ? pqEntry.dsiLong : '', 'PQDESCR'].filter(Boolean), 'VVVS');
+    if (!pqRef) throw new Error('PQDESCR(曲の位置の情報)が見つかりません。DDPMS と同じフォルダに PQDESCR があるか確かめてください。');
     const pq = DDP.parsePQ(await readAll(pqRef.file));
     diags.push(...pq.warnings);
     const toc = DDP.buildTOC(pq.entries);
     diags.push(...toc.warnings);
     if (!toc.tracks.length) throw new Error('PQDESCR に曲の情報がありません。');
 
-    // 音声データ
-    const segments = [];
-    for (const m of ms.entries.filter((e) => e.type.startsWith('D'))) {
-      const ref = findStream(m, null);
-      if (!ref) {
-        diags.push({ level: 'error', text: `音声データ「${m.dsi || '(名前なし)'}」が見つかりません` });
-        continue;
-      }
-      if (m.cdm && m.cdm !== 'DA') diags.push({ level: 'warn', text: `「${ref.name}」の CD モードが「${m.cdm}」です(音楽CD は DA)` });
-      segments.push(makeSegment(ref, m.dss || 0, diags));
-    }
-    if (!segments.length) {
-      const dats = [...set.files.values()].filter((f) => /\.DAT$/i.test(f.name));
-      if (dats.length === 1) {
-        diags.push({ level: 'warn', text: `DDPMS に音声データの記録がないため「${dats[0].name}」を使います` });
-        segments.push(makeSegment(dats[0], 0, diags));
-      } else {
-        throw new Error('音声データ(IMAGE.DAT)が見つかりません。');
-      }
-    }
-    segments.sort((a, b) => a.startSector - b.startSector);
-    for (let i = 1; i < segments.length; i++) {
-      if (segments[i].startSector < segments[i - 1].startSector + segments[i - 1].sectors) {
-        diags.push({ level: 'warn', text: `音声データ「${segments[i - 1].name}」と「${segments[i].name}」の範囲が重なっています` });
-      }
-    }
-    const imageStart = segments[0].startSector;
-    const imageEnd = Math.max(...segments.map((s) => s.startSector + s.sectors));
-    const endSector = toc.leadout !== null ? toc.leadout : imageEnd;
-    diags.push(...DDP.finishTracks(toc.tracks, endSector));
-    if (imageEnd < endSector) {
-      diags.push({ level: 'error', text: `音声データがリードアウトより ${msf(endSector - imageEnd)} 短くなっています(足りない部分は無音で再生します)` });
-    } else if (imageEnd > endSector) {
-      diags.push({ level: 'info', text: `リードアウトの後ろに ${msf(imageEnd - endSector)} の音声データがあります(CD には入らないので再生しません)` });
-    }
-    if (imageStart > toc.tracks[0].start) {
-      diags.push({ level: 'error', text: `音声データが 1曲目の頭(${msf(toc.tracks[0].start)})より後ろの ${msf(imageStart)} から始まっています` });
-    }
-    if (endSector > 80 * 60 * 75) diags.push({ level: 'warn', text: `全体の長さが ${msf(endSector)} あり、80分の CD-R にも入りません` });
-    else if (endSector > 79 * 60 * 75 + 57 * 75) diags.push({ level: 'warn', text: `全体の長さが ${msf(endSector)} あり、CD の規格の上限(79:57)を超えています` });
-
-    // CD-TEXT
+    // CD-TEXT(音声データの候補から外すため、先に探す)
     let cdtext = null;
     const ctEntry = ms.entries.find((e) => /CDTEXT/i.test(e.sub) || /CDTEXT/i.test(e.dsi));
-    const ctRef = findStream(ctEntry, 'CDTEXT.BIN');
+    const ctRef = await findStream([ctEntry ? ctEntry.dsi : 'CDTEXT.BIN', 'CDTEXT.BIN'], null);
     if (ctRef) {
       cdtext = DDP.parseCDText(await readAll(ctRef.file));
       diags.push(...cdtext.warnings);
@@ -180,18 +209,80 @@
       diags.push({ level: 'warn', text: `DDPMS に書かれている CD-TEXT「${ctEntry.dsi}」が見つかりません` });
     }
 
+    // 音声データ
+    const segments = [];
+    const missingAudio = [];
+    for (const m of ms.entries.filter((e) => e.type.startsWith('D'))) {
+      const name = m.dsi || m.dsiLong || '(名前なし)';
+      let ref = null;
+      for (const n of [m.dsi, m.dsiLong]) {
+        ref = ref || findByName(refs, n, used);
+      }
+      if (!ref) {
+        // 名前が違っていても、大きさが DDPMS の記録(セクター数)と同じファイルがあれば使う
+        const want = m.dsl ? m.dsl * SECTOR_BYTES : -1;
+        ref = refs.find((r) => !used.has(r) && r.file.size === want) || null;
+        if (ref) diags.push({ level: 'warn', text: `音声データ「${name}」が見つからないため、大きさが同じ「${ref.name}」を使います` });
+      }
+      if (!ref) {
+        missingAudio.push({ name, bytes: m.dsl ? m.dsl * SECTOR_BYTES : null });
+        continue;
+      }
+      used.add(ref);
+      ref.role = m.dsi || ref.name;
+      if (m.cdm && m.cdm !== 'DA') diags.push({ level: 'warn', text: `「${ref.name}」の CD モードが「${m.cdm}」です(音楽CD は DA)` });
+      if (m.dsl && ref.file.size !== m.dsl * SECTOR_BYTES) {
+        diags.push({ level: 'warn', text: `「${ref.name}」の大きさ(${ref.file.size.toLocaleString()} バイト)が DDPMS の記録(${(m.dsl * SECTOR_BYTES).toLocaleString()} バイト)と違います` });
+      }
+      segments.push(makeSegment(ref, m.dss || 0, diags));
+    }
+    if (!segments.length) {
+      // 残りのファイルのうち、音声データらしいもの(2352 の倍数の大きさ)が1つだけならそれを使う
+      const cands = refs.filter((r) => !used.has(r) && r.file.size >= SECTOR_BYTES * 75 && r.file.size % SECTOR_BYTES === 0);
+      if (cands.length === 1) {
+        diags.push({ level: 'warn', text: `DDPMS に書かれた音声データが見つからないため「${cands[0].name}」を使います` });
+        used.add(cands[0]);
+        cands[0].role = missingAudio.length ? missingAudio[0].name : cands[0].name;
+        segments.push(makeSegment(cands[0], 0, diags));
+        missingAudio.length = 0;
+      }
+    }
+    for (const a of missingAudio) {
+      diags.push({ level: 'error', text: `音声データ「${a.name}」${a.bytes ? `(${formatBytes(a.bytes)})` : ''}が見つかりません` });
+    }
+    const noAudio = !segments.length;
+    if (noAudio && toc.leadout === null) throw new Error('音声データが見つかりません。');
+
+    segments.sort((a, b) => a.startSector - b.startSector);
+    for (let i = 1; i < segments.length; i++) {
+      if (segments[i].startSector < segments[i - 1].startSector + segments[i - 1].sectors) {
+        diags.push({ level: 'warn', text: `音声データ「${segments[i - 1].name}」と「${segments[i].name}」の範囲が重なっています` });
+      }
+    }
+    const imageEnd = noAudio ? toc.leadout : Math.max(...segments.map((s) => s.startSector + s.sectors));
+    const endSector = toc.leadout !== null ? toc.leadout : imageEnd;
+    diags.push(...DDP.finishTracks(toc.tracks, endSector));
+    if (!noAudio) {
+      const imageStart = segments[0].startSector;
+      if (imageEnd < endSector) {
+        diags.push({ level: 'error', text: `音声データがリードアウトより ${msf(endSector - imageEnd)} 短くなっています(足りない部分は無音で再生します)` });
+      } else if (imageEnd > endSector) {
+        diags.push({ level: 'info', text: `リードアウトの後ろに ${msf(imageEnd - endSector)} の音声データがあります(CD には入らないので再生しません)` });
+      }
+      if (imageStart > toc.tracks[0].start) {
+        diags.push({ level: 'error', text: `音声データが 1曲目の頭(${msf(toc.tracks[0].start)})より後ろの ${msf(imageStart)} から始まっています` });
+      }
+    }
+    if (endSector > 80 * 60 * 75) diags.push({ level: 'warn', text: `全体の長さが ${msf(endSector)} あり、80分の CD-R にも入りません` });
+    else if (endSector > 79 * 60 * 75 + 57 * 75) diags.push({ level: 'warn', text: `全体の長さが ${msf(endSector)} あり、CD の規格の上限(79:57)を超えています` });
+
     // チェックサム
-    const sums = new Map();
-    const checksumFiles = [];
-    for (const [key, ref] of set.files) {
-      if (/\.MD5$/.test(key) || /^CHECKSUM/.test(key) || key === 'MD5SUM' || key === 'MD5SUMS') {
-        if (ref.file.size > 1024 * 1024) continue;
-        checksumFiles.push(key);
-        for (const s of DDP.parseChecksums(await readText(ref.file), ref.name)) {
-          const k = s.name.toUpperCase();
-          if (sums.has(k) && sums.get(k).md5 !== s.md5) diags.push({ level: 'warn', text: `「${s.name}」のチェックサムが2通り書かれています` });
-          if (!sums.has(k)) sums.set(k, { md5: s.md5, from: ref.name });
-        }
+    const sums = [];
+    for (const ref of checksumRefs) {
+      for (const s of DDP.parseChecksums(await readText(ref.file), ref.name)) {
+        const same = sums.find((x) => x.name.toUpperCase() === s.name.toUpperCase());
+        if (same && same.md5 !== s.md5) diags.push({ level: 'warn', text: `「${s.name}」のチェックサムが2通り書かれています` });
+        if (!same) sums.push({ name: s.name, md5: s.md5, from: ref.name });
       }
     }
 
@@ -215,28 +306,44 @@
 
     const disc = {
       dir: set.dir,
-      files: set.files,
+      refs,
       ddpid,
       tracks,
       upc,
       cdtext,
       segments,
+      noAudio,
+      missingAudio,
       leadout: endSector,
       totalFrames: endSector * FRAMES_PER_SECTOR,
       sums,
-      checksumFiles,
+      checksumRefs,
       diags,
-      byteOrder: null,
+      byteOrder: { littleEndian: true, confidence: 'none' },
       littleEndian: true,
     };
-    disc.byteOrder = await detectByteOrder(disc);
-    disc.littleEndian = disc.byteOrder.littleEndian;
-    if (disc.byteOrder.confidence === 'low') {
-      diags.push({ level: 'warn', text: 'バイト順をはっきり判定できませんでした。雑音のように聞こえたら「バイト順」を切りかえてください' });
-    } else if (!disc.littleEndian) {
-      diags.push({ level: 'info', text: '音声データはビッグエンディアン(上位バイトが先)と判定しました' });
+    if (!noAudio) {
+      disc.byteOrder = await detectByteOrder(disc);
+      disc.littleEndian = disc.byteOrder.littleEndian;
+      if (disc.byteOrder.confidence === 'low') {
+        diags.push({ level: 'warn', text: 'バイト順をはっきり判定できませんでした。雑音のように聞こえたら「バイト順」を切りかえてください' });
+      } else if (!disc.littleEndian) {
+        diags.push({ level: 'info', text: '音声データはビッグエンディアン(上位バイトが先)と判定しました' });
+      }
     }
     return disc;
+  }
+
+  function formatBytes(n) {
+    if (n >= 1024 * 1024) return `約 ${Math.round(n / 1024 / 1024).toLocaleString()} MB`;
+    if (n >= 1024) return `約 ${Math.round(n / 1024).toLocaleString()} KB`;
+    return `${n} バイト`;
+  }
+
+  function missingAudioText(disc) {
+    const names = disc.missingAudio.map((a) => `「${a.name}」${a.bytes ? `(${formatBytes(a.bytes)})` : ''}`).join('、');
+    return `音声データ ${names || ''} が見つからないため、再生できません(曲の一覧と検証だけ表示しています)。` +
+      `DDPID・DDPMS・PQDESCR と同じフォルダにある、この名前のファイルも一緒に選んでください。フォルダごと選ぶか、ドロップするのが確実です。`;
   }
 
   function makeSegment(ref, startSector, diags) {
@@ -286,19 +393,23 @@
   // ---------- 開く ----------
 
   async function open(list, opts = {}) {
+    // あとから開いたものを優先する(先に始めた読み込みが遅れて終わっても使わない)
+    const myOpen = ++state.openToken;
     hideMessage();
     let set;
     try {
-      set = pickFileset(list);
+      set = await pickFileset(list);
     } catch (e) {
-      showMessage(e.message);
+      if (myOpen === state.openToken) showMessage(e.message);
       return;
     }
+    if (myOpen !== state.openToken) return;
     state.analysisToken++;
     stop();
     showMessage('読み込んでいます…', 'info');
     try {
       const disc = await buildDisc(set);
+      if (myOpen !== state.openToken) return;
       disc.sample = !!opts.sample;
       state.disc = disc;
       state.player.setSource({
@@ -309,10 +420,11 @@
       state.player.anchor = disc.tracks[0].startFrame;
       hideMessage();
       render();
+      if (disc.noAudio) showMessage(missingAudioText(disc));
       analyze(disc);
     } catch (e) {
       console.error(e);
-      showMessage(e.message || String(e));
+      if (myOpen === state.openToken) showMessage(e.message || String(e));
     }
   }
 
@@ -323,17 +435,22 @@
     const targets = [];
     const seen = new Set();
     // 音声データを最初に(時間がかかるので進み具合が分かるように)
-    const order = [...disc.segments.map((s) => s.name.toUpperCase()), 'DDPID', 'DDPMS', 'PQDESCR', 'CDTEXT.BIN'];
-    for (const k of order.concat([...disc.files.keys()].sort())) {
-      if (seen.has(k) || !disc.files.has(k) || disc.checksumFiles.includes(k)) continue;
-      seen.add(k);
-      const ref = disc.files.get(k);
-      targets.push({ key: k, name: ref.name, file: ref.file, size: ref.file.size, md5: null, done: 0, status: 'wait' });
+    const segRefs = disc.refs.filter((r) => disc.segments.some((s) => s.file === r.file));
+    const rest = disc.refs.filter((r) => !segRefs.includes(r)).sort((a, b) => a.name.localeCompare(b.name));
+    const matched = new Set();
+    for (const ref of segRefs.concat(rest)) {
+      if (seen.has(ref) || disc.checksumRefs.includes(ref)) continue;
+      seen.add(ref);
+      // チェックサムに書かれた名前と結びつける(役割の名前 → ファイル名の順)
+      const sum =
+        disc.sums.find((s) => !matched.has(s) && ref.role && s.name.toUpperCase() === ref.role.toUpperCase()) ||
+        disc.sums.find((s) => !matched.has(s) && nameScore(ref.name, s.name));
+      if (sum) matched.add(sum);
+      targets.push({ key: ref.name.toUpperCase(), name: ref.name, file: ref.file, size: ref.file.size, md5: null, done: 0, status: 'wait', expected: sum ? sum.md5 : null, listedAs: sum ? sum.name : null });
     }
-    for (const [k, s] of disc.sums) {
-      if (!disc.files.has(k)) targets.push({ key: k, name: k, file: null, size: null, md5: null, done: 0, status: 'missing', expected: s.md5 });
+    for (const s of disc.sums) {
+      if (!matched.has(s)) targets.push({ key: s.name.toUpperCase(), name: s.name, file: null, size: null, md5: null, done: 0, status: 'missing', expected: s.md5 });
     }
-    for (const t of targets) if (t.expected === undefined) t.expected = disc.sums.has(t.key) ? disc.sums.get(t.key).md5 : null;
     disc.verify = { targets, running: true };
     for (const t of disc.tracks) {
       t.peak = null;
@@ -348,7 +465,7 @@
       for (const t of targets) {
         if (!t.file) continue;
         t.status = 'run';
-        const seg = disc.segments.find((s) => s.name.toUpperCase() === t.key);
+        const seg = disc.segments.find((s) => s.file === t.file);
         const peaks = seg ? makePeakCounter(disc, seg) : null;
         const md5 = new MD5();
         for (let pos = 0; pos < t.size; pos += HASH_CHUNK) {
@@ -452,8 +569,18 @@
     return $('o-pregap').checked ? t.index0Frame : t.startFrame;
   }
 
+  // 音声データがないときは再生せず、足りないファイルを知らせる
+  function cannotPlay() {
+    if (!state.disc) return true;
+    if (state.disc.noAudio) {
+      showMessage(missingAudioText(state.disc));
+      return true;
+    }
+    return false;
+  }
+
   function playTrack(t) {
-    if (!state.disc) return;
+    if (cannotPlay()) return;
     setStopAt(t);
     state.player.play(trackHeadFrame(t));
     updatePlayButton();
@@ -464,7 +591,7 @@
   }
 
   function togglePlay() {
-    if (!state.disc) return;
+    if (cannotPlay()) return;
     const p = state.player;
     if (p.playing) {
       p.pause();
@@ -562,6 +689,7 @@
     $('album-artist').textContent = album.performer || '';
     $('folder-name').textContent = 'フォルダ: ' + (d.dir || '(選んだファイル)');
     $('sample-note').hidden = !d.sample;
+    $('b-play').classList.toggle('no-audio', !!d.noAudio);
 
     const meta = $('disc-meta');
     meta.textContent = '';
@@ -697,10 +825,15 @@
       sum.textContent = 'チェックサムとピークを計算しています… (再生はそのままできます)';
       sum.className = 'verify-summary';
     } else if (bad) {
-      sum.textContent = `${bad} 個のファイルに問題があります。DDP を受け取り直してください。`;
+      const broken = v.targets.filter((t) => t.status === 'ng' || t.status === 'error').length;
+      const missing = bad - broken;
+      const parts = [];
+      if (broken) parts.push(`${broken} 個のファイルの中身がチェックサムと合いません。DDP を受け取り直してください。`);
+      if (missing) parts.push(`チェックサムに書かれた ${missing} 個のファイルが、選んだファイルの中にありません。`);
+      sum.textContent = parts.join(' ');
       sum.className = 'verify-summary bad';
     } else if (listed) {
-      sum.textContent = `チェックサムが ${ok} 個すべて一致しました(${d.checksumFiles.join('、')})`;
+      sum.textContent = `チェックサムが ${ok} 個すべて一致しました(${d.checksumRefs.map((r) => r.name).join('、')})`;
       sum.className = 'verify-summary ok';
     } else {
       sum.textContent = 'チェックサムのファイル(.md5)がないため、照合はしていません。MD5 は計算済みです。';

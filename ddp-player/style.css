@@ -200,6 +200,7 @@ button.icon.play:hover { color: #fff; filter: brightness(1.08); }
 button.icon.play svg { width: 26px; height: 26px; }
 button.icon.play .i-pause, button.icon.play.is-playing .i-play { display: none; }
 button.icon.play.is-playing .i-pause { display: block; }
+button.icon.play.no-audio { opacity: 0.4; cursor: not-allowed; }
 
 .options { display: flex; gap: 8px 18px; align-items: center; flex-wrap: wrap; font-size: 13px; }
 .opt { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }

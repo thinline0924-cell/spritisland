@@ -145,7 +145,7 @@ const text = (page, sel) => page.textContent(sel).then((s) => s.trim());
     b[b.length >> 1] ^= 1;
     fs.writeFileSync(f, b);
     await openSet(page, dir);
-    assert.match(await waitVerify(page), /問題があります/);
+    assert.match(await waitVerify(page), /チェックサムと合いません/);
     assert.match(await text(page, '#file-rows'), /不一致/);
   });
 
@@ -167,6 +167,41 @@ const text = (page, sel) => page.textContent(sel).then((s) => s.trim());
     await page.click('#b-play');
     await page.waitForTimeout(1300);
     assert.match(await text(page, '#d-time'), /^00:0[01]$/);
+    assert.ok(parseFloat(await text(page, '#mt-l')) > -7);
+  });
+
+  await test('音声データがないときは、曲の一覧を出して足りないファイルを知らせる', async (page) => {
+    const dir = makeSet();
+    fs.unlinkSync(path.join(dir, 'IMAGE.DAT'));
+    await openSet(page, dir);
+    assert.strictEqual(await page.locator('#track-rows tr').count(), 3);
+    assert.match(await text(page, '#message'), /IMAGE\.DAT/);
+    await waitVerify(page);
+    assert.match(await text(page, '#verify-summary'), /選んだファイルの中にありません/);
+    await page.click('#b-play');
+    await page.waitForTimeout(500);
+    assert.strictEqual(await text(page, '#d-time'), '00:00');
+  });
+
+  await test('名前の前に文字が付いていても開ける(9cc92fc6-DDPMS など)', async (page) => {
+    const dir = makeSet();
+    for (const n of fs.readdirSync(dir)) fs.renameSync(path.join(dir, n), path.join(dir, 'a1b2c3d4-' + n));
+    await openSet(page, dir);
+    assert.strictEqual(await page.locator('#track-rows tr').count(), 3);
+    assert.match(await waitVerify(page), /5 個すべて一致/);
+    await page.click('#b-play');
+    await page.waitForTimeout(1500);
+    assert.ok(parseFloat(await text(page, '#mt-l')) > -7);
+  });
+
+  await test('音声データの名前が違っても、大きさが合えば使う', async (page) => {
+    const dir = makeSet();
+    fs.renameSync(path.join(dir, 'IMAGE.DAT'), path.join(dir, 'master_audio'));
+    fs.renameSync(path.join(dir, 'DDPMS'), path.join(dir, 'map.bin')); // 名前が違っても中身で見つける
+    await openSet(page, dir);
+    assert.match(await text(page, '#diagnostics'), /大きさが同じ「master_audio」/);
+    await page.click('#b-play');
+    await page.waitForTimeout(1500);
     assert.ok(parseFloat(await text(page, '#mt-l')) > -7);
   });
 
