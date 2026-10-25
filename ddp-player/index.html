@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DDP 試聴プレーヤー</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>DDP 試聴プレーヤー</h1>
+    <p class="lead">CD マスター(DDP 2.0)を、そのまま試聴・確認できます。ファイルはこのパソコンの中だけで読み込まれ、どこにも送信されません。</p>
+  </header>
+
+  <main>
+    <section id="loader" class="drop" aria-label="DDP を開く">
+      <p class="drop-title">DDP のフォルダをここにドロップ</p>
+      <p class="drop-hint">DDPMS・PQDESCR・IMAGE.DAT などが入ったフォルダ(ZIP は先に展開してください)</p>
+      <div class="drop-buttons">
+        <label class="btn primary">フォルダを選ぶ<input type="file" id="pick-dir" webkitdirectory directory multiple hidden></label>
+        <label class="btn">ファイルを選ぶ<input type="file" id="pick-files" multiple hidden></label>
+      </div>
+    </section>
+
+    <div id="message" class="message" role="alert" hidden></div>
+
+    <section id="disc" hidden>
+      <div class="disc-head">
+        <div class="album">
+          <div id="album-title" class="album-title"></div>
+          <div id="album-artist" class="album-artist"></div>
+          <div id="folder-name" class="folder-name"></div>
+        </div>
+        <dl id="disc-meta" class="meta"></dl>
+      </div>
+
+      <div class="player">
+        <div class="display" aria-live="off">
+          <div class="cell"><span class="label">TRACK</span><span id="d-track" class="big">--</span></div>
+          <div class="cell"><span class="label">INDEX</span><span id="d-index" class="big">--</span></div>
+          <div class="cell wide"><span class="label">TIME</span><span id="d-time" class="big">--:--</span></div>
+          <div class="cell"><span class="label">REMAIN</span><span id="d-remain" class="mid">--:--</span></div>
+          <div class="cell"><span class="label">DISC</span><span id="d-disc" class="mid">--:--:--</span></div>
+          <div class="cell title"><span class="label">NOW PLAYING</span><span id="d-title" class="name">-</span></div>
+        </div>
+
+        <div id="seek" class="seek" role="slider" tabindex="0" aria-label="再生位置" aria-valuemin="0">
+          <div class="seek-track">
+            <div id="seek-fill" class="seek-fill"></div>
+            <div id="seek-marks" class="seek-marks"></div>
+            <div id="seek-head" class="seek-head"></div>
+          </div>
+          <div id="seek-tip" class="seek-tip" hidden></div>
+        </div>
+
+        <div class="controls">
+          <div class="transport">
+            <button id="b-prev" class="icon" title="前の曲(↑)" aria-label="前の曲">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg>
+            </button>
+            <button id="b-back" class="icon" title="5秒戻る(←)" aria-label="5秒戻る">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 6v12l-8.5-6zM21 6v12l-8.5-6z"/></svg>
+            </button>
+            <button id="b-play" class="icon play" title="再生 / 一時停止(スペース)" aria-label="再生">
+              <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4v16l13-8z"/></svg>
+              <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 4h4v16H6zM14 4h4v16h-4z"/></svg>
+            </button>
+            <button id="b-fwd" class="icon" title="5秒進む(→)" aria-label="5秒進む">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6v12l8.5-6zM13 6v12l8.5-6z"/></svg>
+            </button>
+            <button id="b-next" class="icon" title="次の曲(↓)" aria-label="次の曲">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg>
+            </button>
+            <button id="b-stop" class="icon" title="停止(Esc)" aria-label="停止">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z"/></svg>
+            </button>
+          </div>
+          <div class="options">
+            <label class="opt"><input type="checkbox" id="o-pregap"> 頭出しをプリギャップ(INDEX 00)から</label>
+            <label class="opt"><input type="checkbox" id="o-single"> 1曲ずつ止める</label>
+            <label class="vol">音量 <input type="range" id="volume" min="0" max="100" value="80" aria-label="音量"><span id="vol-text">80</span></label>
+          </div>
+        </div>
+
+        <div class="meters" aria-label="レベルメーター(dBFS)">
+          <div class="meter-row"><span class="ch">L</span><div class="meter"><div id="m-l" class="meter-bar"></div><div id="mp-l" class="meter-peak"></div></div><span id="mt-l" class="db">-∞</span><span id="mo-l" class="over">OVER</span></div>
+          <div class="meter-row"><span class="ch">R</span><div class="meter"><div id="m-r" class="meter-bar"></div><div id="mp-r" class="meter-peak"></div></div><span id="mt-r" class="db">-∞</span><span id="mo-r" class="over">OVER</span></div>
+          <div class="scale"><span>-60</span><span>-40</span><span>-20</span><span>-10</span><span>-6</span><span>-3</span><span>0</span></div>
+        </div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="tracks">
+          <thead>
+            <tr>
+              <th class="c-no">No.</th>
+              <th>タイトル / アーティスト</th>
+              <th class="c-num">開始</th>
+              <th class="c-num">長さ</th>
+              <th class="c-num">プリギャップ</th>
+              <th>ISRC</th>
+              <th class="c-num">ピーク</th>
+            </tr>
+          </thead>
+          <tbody id="track-rows"></tbody>
+          <tfoot>
+            <tr><td></td><td>リードアウト</td><td id="leadout" class="c-num"></td><td colspan="4"></td></tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <section class="checks">
+        <h2>検証</h2>
+        <div class="verify-head">
+          <div id="verify-summary" class="verify-summary"></div>
+          <div class="progress"><div id="verify-bar" class="progress-bar"></div></div>
+        </div>
+        <div class="table-wrap">
+          <table class="files">
+            <thead><tr><th>ファイル</th><th class="c-num">大きさ</th><th>MD5(計算した値)</th><th>照合</th></tr></thead>
+            <tbody id="file-rows"></tbody>
+          </table>
+        </div>
+        <h3>診断</h3>
+        <ul id="diagnostics" class="diagnostics"></ul>
+      </section>
+
+      <p class="keys">キー操作:スペース=再生/一時停止、←→=5秒戻る/進む、↑↓=前/次の曲、Home=最初から、Esc=停止、1〜9=その番号の曲</p>
+    </section>
+  </main>
+
+  <div id="drop-overlay" class="drop-overlay" hidden><p>ここで離すと開きます</p></div>
+
+  <script src="js/md5.js"></script>
+  <script src="js/ddp.js"></script>
+  <script src="js/player.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

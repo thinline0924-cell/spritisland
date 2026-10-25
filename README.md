@@ -59,6 +59,7 @@ GitHub の `main` に変更が入ると、Render が自動で公開し直しま�
 | `js/glossary.js` | 説明書と用語集の文章 |
 | `render.yaml` | Render で公開するための設定(静的サイト・無料) |
 | `lib/` | three.js(3D表示のライブラリ。MIT ライセンス)。ネットの外部サービスに頼らず動くよう同梱 |
+| `ddp-player/` | 別のツール:**DDP 試聴プレーヤー**(CD マスターの DDP を試聴・検証する。説明は [`ddp-player/README.md`](ddp-player/README.md)) |
 
 ## 注意
 
