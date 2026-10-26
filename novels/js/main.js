@@ -1,4 +1,4 @@
-import { allWorks, getWork, putWork, deleteWork, newId, getPos, getName, setName, applyPrefs } from './store.js';
+import { allWorks, getWork, putWork, deleteWork, newId, getPos, getName, setName, applyPrefs, memo } from './store.js';
 import { parseBlocks, chaptersOf, countChars, charLabel, dateLabel, inline, kansuji } from './parse.js';
 import { readFile } from './importer.js';
 import { openReader } from './reader.js';
@@ -12,6 +12,7 @@ const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<
 
 applyPrefs();
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', applyPrefs);
+new MutationObserver(applyPrefs).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
 
 // ---------- 道すじ ----------
 async function route() {
@@ -120,6 +121,27 @@ function say(text, ms = 0) {
   if (ms) noteTimer = setTimeout(() => { note.hidden = true; }, ms);
 }
 
+// 確かめる。ブラウザの confirm() は使えない場所があるので、ページの中に出す
+function ask(text, yes) {
+  return new Promise((resolve) => {
+    const box = document.createElement('div');
+    box.className = 'ask';
+    box.innerHTML = `<div role="alertdialog" aria-modal="true"><p></p><div><button data-v="0">やめる</button><button data-v="1" class="yes"></button></div></div>`;
+    box.querySelector('p').textContent = text;
+    box.querySelector('.yes').textContent = yes;
+    const done = (v) => { box.remove(); removeEventListener('keydown', key, true); resolve(v); };
+    const key = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+    box.addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (b) done(b.dataset.v === '1');
+      else if (e.target === box) done(false);
+    });
+    addEventListener('keydown', key, true);
+    document.body.append(box);
+    box.querySelector('[data-v="0"]').focus();
+  });
+}
+
 function saveWork(w) {
   return putWork({ ...w, chars: countChars(w.body || ''), updated: Date.now() });
 }
@@ -167,7 +189,17 @@ async function restore(file) {
   }
 }
 
-function download(name, text, type) {
+// 保存。claude.ai の上では、そこで用意された保存の仕組みを使う
+async function download(name, text, type) {
+  const saver = window.claude?.use ? await window.claude.use('downloads').catch(() => null) : null;
+  if (saver) {
+    try {
+      await saver.save({ filename: name, data: text });
+    } catch (err) {
+      if (err?.code !== 'declined') say('ここでは保存できなかった', 4000);
+    }
+    return;
+  }
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([text], { type: type + ';charset=utf-8' }));
   a.download = name;
@@ -212,7 +244,7 @@ async function showWork(id) {
     download(`${w.title || '無題'}.txt`, (head ? head + '\n\n' : '') + (w.body || ''), 'text/plain');
   });
   app.querySelector('[data-a="del"]')?.addEventListener('click', async () => {
-    if (!confirm(`「${w.title || '無題'}」を消しますか。`)) return;
+    if (!(await ask(`「${w.title || '無題'}」を消しますか。`, '消す'))) return;
     await deleteWork(w.id);
     location.hash = '#/';
   });
@@ -235,7 +267,7 @@ async function showEditor(id) {
   let w = id ? await getWork(id) : null;
   if (id && !w) { location.hash = '#/'; return; }
   if (!w) {
-    w = { id: newId(), created: Date.now(), title: '', author: localStorage.getItem('author') || '', summary: '', body: '', source: 'write', ...(draft || {}) };
+    w = { id: newId(), created: Date.now(), title: '', author: memo('author') || '', summary: '', body: '', source: 'write', ...(draft || {}) };
     draft = null;
   }
   document.title = w.title || '書く';
@@ -258,8 +290,10 @@ async function showEditor(id) {
   let dirty = false;
   const recount = () => { count.textContent = countChars(body.value).toLocaleString('ja-JP') + '字'; };
   recount();
-  form.querySelector('.top > a').addEventListener('click', (e) => {
-    if (dirty && !confirm('書きかけを捨てますか。')) e.preventDefault();
+  form.querySelector('.top > a').addEventListener('click', async (e) => {
+    if (!dirty) return;
+    e.preventDefault();
+    if (await ask('書きかけを捨てますか。', '捨てる')) { dirty = false; location.hash = back; }
   });
   form.addEventListener('input', () => { dirty = true; recount(); });
 
@@ -278,12 +312,12 @@ async function showEditor(id) {
     say('読み込み中');
     try {
       const got = await readFile(f);
-      if (body.value.trim() && !confirm('本文を置きかえますか。')) { say(''); return; }
+      say('');
+      if (body.value.trim() && !(await ask('本文を置きかえますか。', '置きかえる'))) return;
       body.value = got.body;
       if (!form.elements.title.value.trim()) form.elements.title.value = got.title;
       dirty = true;
       recount();
-      say('');
     } catch (err) {
       console.error(err);
       say(`${f.name} は読めなかった`, 4000);
@@ -300,7 +334,7 @@ async function showEditor(id) {
       summary: f.summary.value.trim(),
       body: f.body.value.replace(/\s+$/, ''),
     };
-    if (next.author) localStorage.setItem('author', next.author);
+    if (next.author) memo('author', next.author);
     dirty = false;
     await saveWork(next);
     location.hash = `#/w/${next.id}`;

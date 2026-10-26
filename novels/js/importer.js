@@ -38,12 +38,23 @@ async function loadPdfjs() {
   return pdfjs;
 }
 
+// 日本語フォントの文字対応表(CMap)。一つの JSON にまとめてあり、要るときだけ読む
+let cmaps = null;
+class CMapReader {
+  async fetch({ name }) {
+    cmaps ??= fetch(new URL('../lib/pdfjs/cmaps-ja.json', import.meta.url)).then((r) => r.json());
+    const data = (await cmaps)[name];
+    if (!data) throw new Error(`CMap ${name} がない`);
+    return { cMapData: Uint8Array.from(atob(data), (c) => c.charCodeAt(0)), isCompressed: true };
+  }
+}
+
 async function readPdf(file) {
   const lib = await loadPdfjs();
   const doc = await lib.getDocument({
     data: new Uint8Array(await file.arrayBuffer()),
-    cMapUrl: new URL('../lib/pdfjs/cmaps/', import.meta.url).href,
-    cMapPacked: true,
+    CMapReaderFactory: CMapReader,
+    useWorkerFetch: false,
     isEvalSupported: false,
   }).promise;
 

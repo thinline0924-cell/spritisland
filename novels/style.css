@@ -2,30 +2,42 @@
   --mincho: "Shippori Mincho", "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", serif;
   --gothic: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic", "YuGothic", "Noto Sans JP", sans-serif;
   --text: var(--mincho);
-  --bg: #f2eee5;
-  --ink: #23201c;
-  --sub: #776f63;
-  --line: rgba(35, 32, 28, .17);
-  --tint: rgba(35, 32, 28, .045);
-  --red: #9b3426;
+  --bg: #e8e7e0;
+  --ink: #1f2124;
+  --sub: #6c6f72;
+  --line: rgba(31, 33, 36, .17);
+  --tint: rgba(31, 33, 36, .045);
+  --accent: #2e4d72;
   color-scheme: light;
 }
 :root[data-tone="white"] {
-  --bg: #fbfaf7;
-  --ink: #141311;
-  --sub: #6d6c67;
+  --bg: #f7f7f5;
+  --ink: #121315;
+  --sub: #66686c;
   --line: rgba(0, 0, 0, .13);
   --tint: rgba(0, 0, 0, .035);
-  --red: #a0301f;
+  --accent: #2b4a70;
 }
 :root[data-tone="ink"] {
-  --bg: #171614;
-  --ink: #d5cfc3;
-  --sub: #8b8478;
-  --line: rgba(213, 207, 195, .15);
-  --tint: rgba(213, 207, 195, .05);
-  --red: #c8735f;
+  --bg: #16171a;
+  --ink: #cfd0cc;
+  --sub: #85878b;
+  --line: rgba(207, 208, 204, .14);
+  --tint: rgba(207, 208, 204, .05);
+  --accent: #8ea8c9;
   color-scheme: dark;
+}
+/* スクリプトが動く前のひととき */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tone]) {
+    --bg: #16171a;
+    --ink: #cfd0cc;
+    --sub: #85878b;
+    --line: rgba(207, 208, 204, .14);
+    --tint: rgba(207, 208, 204, .05);
+    --accent: #8ea8c9;
+    color-scheme: dark;
+  }
 }
 :root[data-face="gothic"] { --text: var(--gothic); }
 
@@ -45,14 +57,15 @@ button {
   font: inherit; color: inherit; letter-spacing: inherit;
   background: none; border: 0; padding: 0; margin: 0; cursor: pointer;
 }
-::selection { background: color-mix(in srgb, var(--red) 22%, transparent); }
+::selection { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .file { cursor: pointer; }
+a:focus-visible, button:focus-visible, .file:focus-within { outline: 1px solid var(--accent); outline-offset: 3px; }
 .file input { display: none; }
 
 .top a:hover, .top button:hover, .top .file:hover,
 .foot button:hover, .foot .file:hover,
 .contents a:hover, .go a:not(.read):hover {
-  color: var(--red);
+  color: var(--accent);
 }
 
 /* ---------- 上下の帯 ---------- */
@@ -91,7 +104,7 @@ button {
   cursor: text;
   min-block-size: 1em;
 }
-.libname:focus { color: var(--red); }
+.libname:focus { color: var(--accent); }
 .book {
   display: flex;
   justify-content: space-between;
@@ -102,7 +115,7 @@ button {
 }
 .book:last-child { border-block-end: 1px solid var(--line); }
 .book:hover { background: var(--tint); }
-.book:hover .t { color: var(--red); }
+.book:hover .t { color: var(--accent); }
 .book .t {
   font-size: 21px;
   letter-spacing: .14em;
@@ -214,7 +227,7 @@ button {
 .edit .top { padding-left: 0; padding-right: 0; }
 .edit .count { font-size: 12px; letter-spacing: .1em; }
 .edit button[type="submit"] { color: var(--ink); border-bottom: 1px solid var(--ink); padding-bottom: 2px; }
-.edit button[type="submit"]:hover { color: var(--red); border-color: var(--red); }
+.edit button[type="submit"]:hover { color: var(--accent); border-color: var(--accent); }
 .edit input, .edit textarea {
   font: inherit;
   color: inherit;
@@ -348,7 +361,7 @@ button {
   bottom: 0;
   left: 0;
   height: 2px;
-  background: var(--red);
+  background: var(--accent);
   opacity: .75;
   transition: width .15s;
 }
@@ -374,7 +387,7 @@ button {
 .toc li.l2 button { padding-left: 1.2em; font-size: 13px; }
 .toc li.l3 button { padding-left: 2.4em; font-size: 12.5px; }
 .toc button { display: block; width: 100%; text-align: left; padding: .7em 0; line-height: 1.6; }
-.toc button:hover, .toc button.here { color: var(--red); }
+.toc button:hover, .toc button.here { color: var(--accent); }
 .set dl { display: grid; grid-template-columns: 3.4em 1fr; align-items: center; gap: 1em 0; margin: .3em 0; }
 .set dt { color: var(--sub); font-size: 12px; letter-spacing: .25em; }
 .set dd { display: flex; margin: 0; }
@@ -404,6 +417,28 @@ button {
   z-index: 10;
 }
 #note[hidden] { display: none; }
+.ask {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  z-index: 20;
+}
+.ask > div {
+  background: var(--bg);
+  border: 1px solid var(--ink);
+  padding: 1.8em 2em 1.4em;
+  min-width: min(320px, 100%);
+  font-size: 15px;
+  letter-spacing: .08em;
+}
+.ask p { margin: 0 0 1.8em; line-height: 1.8; }
+.ask > div > div { display: flex; justify-content: flex-end; gap: 1.8em; font-size: 13px; letter-spacing: .2em; color: var(--sub); }
+.ask button:hover, .ask button:focus-visible { color: var(--accent); outline: none; }
+.ask .yes { color: var(--ink); border-bottom: 1px solid currentColor; padding-bottom: 2px; }
 body.dropping #app { opacity: .35; transition: opacity .15s; }
 body.dropping::after {
   content: "";

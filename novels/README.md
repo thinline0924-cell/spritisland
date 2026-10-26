@@ -44,4 +44,4 @@ HTML・CSS・JavaScript だけで動くので、`/novels/` を開くだけで使
 | `js/parse.js` | ルビ・見出しなどの記法を読みとる |
 | `js/importer.js` | テキストと PDF から本文を取りだす |
 | `js/store.js` | 保存(IndexedDB)と設定 |
-| `lib/pdfjs/` | PDF を読むライブラリ pdf.js(Apache-2.0)。外部サービスに頼らず動くよう同梱 |
+| `lib/pdfjs/` | PDF を読むライブラリ pdf.js(Apache-2.0)。外部サービスに頼らず動くよう同梱。`cmaps-ja.json` は日本語フォントの文字対応表をまとめたもの |
