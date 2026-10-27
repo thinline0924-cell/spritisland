@@ -184,6 +184,15 @@ a:focus-visible, button:focus-visible, .file:focus-within { outline: 1px solid v
   letter-spacing: .06em;
 }
 .work .summary p { margin: 0; text-indent: 1em; }
+.summary button {
+  margin-block-start: 1.6em;
+  font-size: 12px;
+  letter-spacing: .25em;
+  color: var(--sub);
+}
+.summary button:hover { color: var(--accent); }
+.summary.empty { border-block-start-style: dashed; }
+.summary.empty button { margin: 0; font-size: 14px; }
 .contents {
   list-style: none;
   margin: 0;
@@ -382,6 +391,10 @@ a:focus-visible, button:focus-visible, .file:focus-within { outline: 1px solid v
   z-index: 3;
 }
 .sheet[hidden] { display: none; }
+.sum p { margin: 0 0 .9em; line-height: 1.95; text-indent: 1em; letter-spacing: .06em; }
+.sum button { margin-top: .4em; font-size: 12px; letter-spacing: .25em; color: var(--sub); }
+.sum button:hover { color: var(--accent); }
+.sum { width: min(400px, calc(100vw - 48px)); }
 .toc ol { list-style: none; margin: 0; padding: 0; }
 .toc li + li { border-top: 1px solid var(--line); }
 .toc li.l2 button { padding-left: 1.2em; font-size: 13px; }
@@ -436,7 +449,25 @@ a:focus-visible, button:focus-visible, .file:focus-within { outline: 1px solid v
   letter-spacing: .08em;
 }
 .ask p { margin: 0 0 1.8em; line-height: 1.8; }
-.ask > div > div { display: flex; justify-content: flex-end; gap: 1.8em; font-size: 13px; letter-spacing: .2em; color: var(--sub); }
+.ask .wide { width: min(36em, 100%); }
+.ask textarea {
+  display: block;
+  width: 100%;
+  margin: 0 0 1.4em;
+  padding: .6em 0;
+  font: inherit;
+  font-size: 15px;
+  line-height: 1.9;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  outline: none;
+  resize: vertical;
+}
+.ask textarea:focus { border-bottom-color: var(--ink); }
+.ask textarea::placeholder { color: var(--sub); opacity: .6; letter-spacing: .25em; }
+.ask .row { display: flex; justify-content: flex-end; gap: 1.8em; font-size: 13px; letter-spacing: .2em; color: var(--sub); }
 .ask button:hover, .ask button:focus-visible { color: var(--accent); outline: none; }
 .ask .yes { color: var(--ink); border-bottom: 1px solid currentColor; padding-bottom: 2px; }
 body.dropping #app { opacity: .35; transition: opacity .15s; }

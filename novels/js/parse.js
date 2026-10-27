@@ -16,6 +16,11 @@ const RE_BREAK = /^［＃(改ページ|改丁|改段|改見開き)］$/;
 const RE_SEP = /^[\s　]*(?:[＊*◇◆□■☆★○●・※〜~―\-−]\s*　*){1,12}$/;
 const OPENERS = '「『（(〈《【〔［“‘―…';
 
+// 章の見出しになる行か(第一章・序章など)
+export function isChapterLine(t) {
+  return t.length <= 40 && (RE_CHAPTER.test(t) || RE_NAMED.test(t) || (t.length <= 20 && RE_CHAPTER_LOOSE.test(t) && !/[。、」]/.test(t)));
+}
+
 export function parseBlocks(src) {
   const lines = src.replace(/\r\n?/g, '\n').split('\n');
   const blocks = [];
@@ -38,7 +43,7 @@ export function parseBlocks(src) {
       blocks.push({ type: 'h', level: m[1].length, text: m[2] });
       continue;
     }
-    if (t.length <= 40 && (RE_CHAPTER.test(t) || RE_NAMED.test(t) || (t.length <= 20 && RE_CHAPTER_LOOSE.test(t) && !/[。、」]/.test(t)))) {
+    if (isChapterLine(t)) {
       blocks.push({ type: 'h', level: 1, text: t });
       continue;
     }

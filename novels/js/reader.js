@@ -1,10 +1,12 @@
 // 読む画面。本文を段組み(column)でページに割り、1ページずつめくる
 import { parseBlocks, renderBlocks, chaptersOf, inline } from './parse.js';
-import { getPos, setPos, getPrefs, setPrefs, applyPrefs } from './store.js';
+import { getPos, setPos, getPrefs, setPrefs, applyPrefs, putWork } from './store.js';
+import { compose } from './ui.js';
 
 const SIZES = [14, 16, 18, 20, 23];
 
 export function openReader(root, work, opt = {}) {
+  work = { ...work };
   let prefs = getPrefs();
   const blocks = parseBlocks(work.body || '');
   const chapters = chaptersOf(blocks);
@@ -14,7 +16,7 @@ export function openReader(root, work, opt = {}) {
       <header class="rh">
         <a class="r-back" href="#/w/${work.id}">戻る</a>
         <span class="run"></span>
-        <span class="r-tools"><button data-a="toc">目次</button><button data-a="set">組版</button></span>
+        <span class="r-tools">${work.bundled && !work.summary ? '' : '<button data-a="sum">あらすじ</button>'}<button data-a="toc">目次</button><button data-a="set">組版</button></span>
       </header>
       <div class="page"><div class="flow"></div></div>
       <footer class="rf"><span class="folio"></span></footer>
@@ -25,6 +27,7 @@ export function openReader(root, work, opt = {}) {
           ${chapters.map((c) => `<li class="l${c.level}"><button data-go="${c.i}">${esc(c.text)}</button></li>`).join('')}
         </ol>
       </aside>
+      <aside class="sheet sum" hidden></aside>
       <aside class="sheet set" hidden>
         <dl>
           <dt>組方</dt><dd data-k="dir"><button data-v="v">縦</button><button data-v="h">横</button></dd>
@@ -44,6 +47,8 @@ export function openReader(root, work, opt = {}) {
   const barFill = $('.bar i');
   const toc = $('.toc');
   const set = $('.set');
+  const sum = $('.sum');
+  const sheets = { toc, set, sum };
 
   let vertical = true;
   let step = 1;
@@ -196,10 +201,25 @@ export function openReader(root, work, opt = {}) {
     closeSheets();
   });
 
+  // ---- あらすじ ----
+  function fillSum() {
+    const text = (work.summary || '').trim();
+    sum.innerHTML = (text ? text.split(/\n+/).map((l) => `<p>${inline(l, false)}</p>`).join('') : '')
+      + (work.bundled ? '' : `<button data-a="sum-edit">${text ? '直す' : 'あらすじを書く'}</button>`);
+  }
+  sum.addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-a="sum-edit"]')) return;
+    const v = await compose({ value: work.summary || '', placeholder: 'あらすじ' });
+    if (v == null) return;
+    work = { ...work, summary: v, updated: Date.now() };
+    await putWork(work);
+    fillSum();
+  });
+  fillSum();
+
   function closeSheets() {
-    const was = !toc.hidden || !set.hidden;
-    toc.hidden = true;
-    set.hidden = true;
+    const was = Object.values(sheets).some((x) => !x.hidden);
+    Object.values(sheets).forEach((x) => { x.hidden = true; });
     root.querySelectorAll('.r-tools button').forEach((b) => b.classList.remove('on'));
     return was;
   }
@@ -207,7 +227,7 @@ export function openReader(root, work, opt = {}) {
   $('.r-tools').addEventListener('click', (e) => {
     const b = e.target.closest('button');
     if (!b) return;
-    const sheet = b.dataset.a === 'toc' ? toc : set;
+    const sheet = sheets[b.dataset.a];
     const open = sheet.hidden;
     closeSheets();
     if (open) {
@@ -269,6 +289,7 @@ export function openReader(root, work, opt = {}) {
 
   function onKey(e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest?.('input, textarea')) return;
     const k = e.key;
     if (k === 'Escape') { if (!closeSheets()) location.hash = `#/w/${work.id}`; return; }
     if (k === 'ArrowLeft') vertical ? next() : prev();

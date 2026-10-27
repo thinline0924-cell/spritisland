@@ -1,10 +1,64 @@
-// テキストファイル・PDF から本文を取りだす
+// テキストファイル・PDF・貼り付けた文章から本文を取りだす
+import { isChapterLine } from './parse.js';
 
 export async function readFile(file) {
   const name = file.name.replace(/\.[^.]+$/, '');
   const isPdf = file.type === 'application/pdf' || /\.pdf$/i.test(file.name);
-  const body = isPdf ? await readPdf(file) : decode(await file.arrayBuffer());
-  return { title: name.trim() || '無題', body: tidy(body), source: isPdf ? 'pdf' : 'text' };
+  const front = splitFront(tidy(isPdf ? await readPdf(file) : decode(await file.arrayBuffer())));
+  return { ...front, title: front.title || name.trim() || '無題', source: isPdf ? 'pdf' : 'text' };
+}
+
+export function readText(text) {
+  return { ...splitFront(tidy(text)), source: 'paste' };
+}
+
+// 原稿の頭にある題・著者・あらすじを本文から分ける
+//   題       1行目が短く、すぐあとが空行
+//   著者     「作者:」「著:」などで始まる行
+//   あらすじ 「あらすじ」「【あらすじ】」などの行から、次の空行まで
+const RE_AUTHOR = /^(?:作者|著者|著|作|筆者|文)[\s　]*[:：][\s　]*(.+)$/;
+const RE_SUMMARY = /^[【\[［〈《■◆●□◇]?[\s　]*(?:あらすじ|粗筋|梗概)[\s　]*[】\]］〉》]?[\s　]*[:：]?[\s　]*(.*)$/;
+
+function splitFront(src) {
+  const lines = src.split('\n');
+  const out = {};
+  let i = 0;
+  const skip = () => { while (i < lines.length && !lines[i].trim()) i++; };
+  skip();
+
+  const first = (lines[i] || '').trim().replace(/^[#＃]+[\s　]*/, '');
+  if (
+    first && [...first].length <= 40 && i + 1 < lines.length && !lines[i + 1].trim() &&
+    !/[。、]$/.test(first) && !/^[「『（(〈《【〔―…]/.test(first) &&
+    !isChapterLine(first) && !RE_AUTHOR.test(first) && !RE_SUMMARY.test(first)
+  ) {
+    out.title = first;
+    i++;
+    skip();
+  }
+
+  // 題のすぐあとの数行だけを見る
+  for (let n = 0; n < 3 && i < lines.length; n++) {
+    const t = lines[i].trim();
+    let m;
+    if (!out.author && (m = t.match(RE_AUTHOR))) {
+      out.author = m[1].trim();
+      i++;
+    } else if (!out.summary && (m = t.match(RE_SUMMARY))) {
+      const para = m[1] ? [m[1]] : [];
+      i++;
+      if (!para.length) skip();
+      while (i < lines.length && lines[i].trim() && !isChapterLine(lines[i].trim())) para.push(lines[i++].trim());
+      if (para.length) out.summary = para.join('\n');
+    } else {
+      break;
+    }
+    skip();
+  }
+
+  // 何も分けられなかったときは、元の文章をそのまま本文に
+  out.body = out.title || out.author || out.summary ? lines.slice(i).join('\n').replace(/\s+$/, '') : src;
+  return out;
 }
 
 function decode(buf) {
@@ -19,14 +73,15 @@ function decode(buf) {
   }
 }
 
-function tidy(s) {
+export function tidy(s) {
   return s
     .replace(/[\uFE10-\uFE19\uFE30-\uFE4F]/g, (c) => c.normalize('NFKC'))
     .replace(/^\uFEFF/, '')
     .replace(/\r\n?/g, '\n')
     .replace(/\u00a0/g, ' ')
     .replace(/\n{4,}/g, '\n\n\n')
-    .trim();
+    .replace(/^(?:[ \t　]*\n)+/, '') // 頭の空行だけ落とす(行頭の全角空白は字下げなので残す)
+    .replace(/\s+$/, '');
 }
 
 let pdfjs = null;

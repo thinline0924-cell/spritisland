@@ -1,6 +1,7 @@
 import { allWorks, getWork, putWork, deleteWork, newId, getPos, getName, setName, applyPrefs, memo } from './store.js';
 import { parseBlocks, chaptersOf, countChars, charLabel, dateLabel, inline, kansuji } from './parse.js';
-import { readFile } from './importer.js';
+import { readFile, readText } from './importer.js';
+import { ask, compose } from './ui.js';
 import { openReader } from './reader.js';
 
 const app = document.getElementById('app');
@@ -23,7 +24,7 @@ async function route() {
   if (kind === 'w') return showWork(id);
   if (kind === 'r') return showReader(id, extra, arg);
   if (kind === 'e') return showEditor(id);
-  if (kind === 'new') return showEditor(null);
+  if (kind === 'new') return showEditor(null, id === 'paste');
   return showShelf();
 }
 addEventListener('hashchange', route);
@@ -34,7 +35,7 @@ async function showShelf() {
   document.title = getName();
   app.innerHTML = `
     <header class="top">
-      <nav><a href="#/new">書く</a><label class="file">取り込む<input type="file" multiple accept=".txt,.text,.md,.pdf,text/plain,application/pdf"></label></nav>
+      <nav><a href="#/new">書く</a><button data-a="paste">貼り付ける</button><label class="file">取り込む<input type="file" multiple accept=".txt,.text,.md,.pdf,text/plain,application/pdf"></label></nav>
     </header>
     <main class="shelf vscroll">
       <h1 class="libname" contenteditable="true" spellcheck="false">${esc(getName())}</h1>
@@ -54,6 +55,13 @@ async function showShelf() {
     document.title = v;
   });
   app.querySelector('[data-a="backup"]').addEventListener('click', backup);
+  app.querySelector('[data-a="paste"]').addEventListener('click', async () => {
+    // 読めるならクリップボードからそのまま。読めなければ本文の欄を開いて貼ってもらう
+    let text = '';
+    try { text = await navigator.clipboard.readText(); } catch {}
+    if (text.trim()) pasteDraft(text);
+    else location.hash = '#/new/paste';
+  });
   bindFiles();
   wheelSideways(app.querySelector('.shelf'));
 }
@@ -121,30 +129,25 @@ function say(text, ms = 0) {
   if (ms) noteTimer = setTimeout(() => { note.hidden = true; }, ms);
 }
 
-// 確かめる。ブラウザの confirm() は使えない場所があるので、ページの中に出す
-function ask(text, yes) {
-  return new Promise((resolve) => {
-    const box = document.createElement('div');
-    box.className = 'ask';
-    box.innerHTML = `<div role="alertdialog" aria-modal="true"><p></p><div><button data-v="0">やめる</button><button data-v="1" class="yes"></button></div></div>`;
-    box.querySelector('p').textContent = text;
-    box.querySelector('.yes').textContent = yes;
-    const done = (v) => { box.remove(); removeEventListener('keydown', key, true); resolve(v); };
-    const key = (e) => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
-    box.addEventListener('click', (e) => {
-      const b = e.target.closest('button');
-      if (b) done(b.dataset.v === '1');
-      else if (e.target === box) done(false);
-    });
-    addEventListener('keydown', key, true);
-    document.body.append(box);
-    box.querySelector('[data-v="0"]').focus();
-  });
-}
-
 function saveWork(w) {
   return putWork({ ...w, chars: countChars(w.body || ''), updated: Date.now() });
 }
+
+// 貼り付けた文章で書きはじめる
+function pasteDraft(text) {
+  draft = readText(text);
+  if (location.hash === '#/new') route(); else location.hash = '#/new';
+}
+
+// 書架で貼り付けたら、そのまま新しい作品に
+addEventListener('paste', (e) => {
+  if (document.body.dataset.view !== 'shelf') return;
+  if (e.target.closest?.('input, textarea, [contenteditable="true"]')) return;
+  const text = e.clipboardData?.getData('text/plain') || '';
+  if (!text.trim()) return;
+  e.preventDefault();
+  pasteDraft(text);
+});
 
 // 窓に落として取り込む
 let dragDepth = 0;
@@ -232,7 +235,9 @@ async function showWork(id) {
         ${w.author ? `<p class="by">${esc(w.author)}</p>` : ''}
         <p class="meta"><span>${charLabel(w.chars ?? countChars(w.body || ''))}</span><span>${dateLabel(w.updated || w.created || Date.now())}</span></p>
       </div>
-      ${summary ? `<div class="summary">${summary.split(/\n+/).map((l) => `<p>${inline(l, true)}</p>`).join('')}</div>` : ''}
+      ${summary
+        ? `<div class="summary">${summary.split(/\n+/).map((l) => `<p>${inline(l, true)}</p>`).join('')}${w.bundled ? '' : '<button class="sum-edit" data-a="sum">直す</button>'}</div>`
+        : w.bundled ? '' : '<div class="summary empty"><button data-a="sum">あらすじを書く</button></div>'}
       ${chapters.length ? `<ol class="contents">${chapters.map((c) => `<li class="l${c.level}"><a href="#/r/${w.id}/c/${c.i}">${inline(c.text, true)}</a></li>`).join('')}</ol>` : ''}
     </main>
     <footer class="go">
@@ -247,6 +252,12 @@ async function showWork(id) {
     if (!(await ask(`「${w.title || '無題'}」を消しますか。`, '消す'))) return;
     await deleteWork(w.id);
     location.hash = '#/';
+  });
+  app.querySelector('[data-a="sum"]')?.addEventListener('click', async () => {
+    const v = await compose({ value: w.summary || '', placeholder: 'あらすじ' });
+    if (v == null) return;
+    await putWork({ ...w, summary: v, updated: Date.now() });
+    showWork(w.id);
   });
   wheelSideways(app.querySelector('.work'));
 }
@@ -263,7 +274,7 @@ async function showReader(id, extra, arg) {
 }
 
 // ---------- 書く・直す ----------
-async function showEditor(id) {
+async function showEditor(id, paste = false) {
   let w = id ? await getWork(id) : null;
   if (id && !w) { location.hash = '#/'; return; }
   if (!w) {
@@ -296,6 +307,23 @@ async function showEditor(id) {
     if (await ask('書きかけを捨てますか。', '捨てる')) { dirty = false; location.hash = back; }
   });
   form.addEventListener('input', () => { dirty = true; recount(); });
+
+  // 空の本文に貼り付けたら、頭の題・著者・あらすじを各欄に分ける
+  body.addEventListener('paste', (e) => {
+    if (body.value.trim()) return;
+    const text = e.clipboardData?.getData('text/plain') || '';
+    if (!text.trim()) return;
+    e.preventDefault();
+    const got = readText(text);
+    const f = form.elements;
+    if (got.title && !f.title.value.trim()) f.title.value = got.title;
+    if (got.author && (!f.author.value.trim() || f.author.value === memo('author'))) f.author.value = got.author;
+    if (got.summary && !f.summary.value.trim()) f.summary.value = got.summary;
+    body.value = got.body;
+    body.setSelectionRange(0, 0);
+    dirty = true;
+    recount();
+  });
 
   // 本文の中でタブを打てるように(全角空白で字下げ)
   body.addEventListener('keydown', (e) => {
@@ -343,7 +371,8 @@ async function showEditor(id) {
   const guard = (e) => { if (dirty) { e.preventDefault(); e.returnValue = ''; } };
   addEventListener('beforeunload', guard);
   cleanup = () => removeEventListener('beforeunload', guard);
-  if (!id && !w.body) form.elements.title.focus();
+  if (paste) body.focus();
+  else if (!id && !w.body) form.elements.title.focus();
 }
 
 route();
