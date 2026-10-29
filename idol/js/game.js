@@ -69,11 +69,12 @@ const DESKTOP = [
   { key: 'newfolder', name: '新しいフォルダー (2)', icon: 'folder' },
   { key: 'keihi', name: '経費精算_10月.xlsx', icon: 'sheet' },
   { key: 'answer', name: '答え合わせ(開発用).txt', icon: 'txt', after: 1 },
+  { key: 'group', name: '新グループ', icon: 'folder', grp: 1 },
 ];
 function renderDesktop() {
   const box = document.getElementById('icons');
   box.innerHTML = '';
-  DESKTOP.filter(d => !d.after || S.submitted).forEach(d => {
+  DESKTOP.filter(d => (!d.after || S.submitted) && (!d.grp || S.phase === 'group')).forEach(d => {
     const b = OS.el('button', 'dicon' + (d.app ? ' app' : ''));
     b.innerHTML = `${Icons.get(d.icon)}<span></span>`;
     b.querySelector('span').textContent = d.name;
@@ -101,10 +102,12 @@ function openDesktop(k) {
     shot: openScreenshot,
     keihi: () => OS.dialog('表計算', '「経費精算_10月.xlsx」は、ほかのユーザー(tamura)が編集中のため開けません。\n\n読み取り専用で開くこともできません。', null, 'warn'),
     answer: openAnswer,
+    group: () => openExplorer('group'),
   };
   (map[k] || (() => {}))();
 }
 function renderSticky() {
+  if (S.phase === 'group') { G.sticky(); return; }
   const n = document.getElementById('sticky');
   const left = freeLeft();
   const used = S.slots.filter(s => s && s.kind === 'act').length;
@@ -116,7 +119,7 @@ function renderSticky() {
 function updateClock() {
   const t = now();
   const d = WEEK.days[t.day].replace(/\(.\)/, '');
-  document.getElementById('clock').innerHTML = `<span>${t.time}</span><span>2026/${d}</span>`;
+  document.getElementById('clock').innerHTML = S.phase === 'group' ? `<span>${S.g.done ? '18:30' : '9:00'}</span><span>${G.clockDate()}</span>` : `<span>${t.time}</span><span>2026/${d}</span>`;
   renderSticky();
   const unread = S.mails.filter(m => m.box === 'inbox' && m.unread).length;
   document.getElementById('pin-mail').dataset.badge = unread || '';
@@ -153,6 +156,7 @@ function folderList(path) {
     return f;
   }
   if (path.startsWith('c:')) return folderFiles(path.slice(2));
+  if (path === 'group') return S.phase === 'group' ? G.explorerFiles() : [];
   if (path === 'trash') return [
     { name: 'Lumière_あかり_卒業発表文_v3.docx', icon: 'doc', type: 'Word 文書', size: '18 KB', open: () => openText('akari', 'Lumière_あかり_卒業発表文_v3.docx(下書き)', `ファンのみなさまへ
 
@@ -173,7 +177,7 @@ Lumièreを卒業します。
   ];
   return [];
 }
-const PATH_NAME = { audition: '共有 > オーディション2026秋', trash: 'ごみ箱', newfolder: 'デスクトップ > 新しいフォルダー (2)', downloads: 'ダウンロード' };
+const PATH_NAME = { group: '共有 > 新グループ', audition: '共有 > オーディション2026秋', trash: 'ごみ箱', newfolder: 'デスクトップ > 新しいフォルダー (2)', downloads: 'ダウンロード' };
 function openExplorer(path) {
   OS.open('explorer', {
     title: 'エクスプローラー', icon: 'folder', w: 760, h: 460,
@@ -190,6 +194,7 @@ function openExplorer(path) {
             <button data-p="desktop">${Icons.get('folder')}デスクトップ</button>
             <button data-p="downloads">${Icons.get('folder')}ダウンロード</button>
             <div class="nav-h">共有</div>
+            ${S.phase === 'group' ? `<button data-p="group">${Icons.get('folder')}新グループ</button>` : ''}
             <button data-p="audition">${Icons.get('folder')}オーディション2026秋</button>
             <button data-p="lumiere">${Icons.get('folder')}Lumière</button>
             <button data-p="trash">${Icons.get('trash')}ごみ箱</button>
@@ -315,7 +320,7 @@ function openMail() {
       const cur = S.mails.find(m => m.id === w.sel && m.box === w.box);
       const cnt = b => S.mails.filter(m => m.box === b && m.unread).length;
       body.innerHTML = `
-        <div class="ml-bar"><button class="btn primary" data-new>${Icons.get('pen')}問い合わせを書く</button><span class="ml-acct">p-new@mitsuba-pro.co.jp</span></div>
+        <div class="ml-bar"><button class="btn primary" data-new ${S.submitted ? 'hidden' : ''}>${Icons.get('pen')}問い合わせを書く</button><span class="ml-acct">p-new@mitsuba-pro.co.jp</span></div>
         <div class="ml-main ${cur && OS.isNarrow() ? 'reading' : ''}">
           <nav class="ml-nav">
             <button data-b="inbox" class="${w.box === 'inbox' ? 'on' : ''}">受信トレイ<em>${cnt('inbox') || ''}</em></button>
@@ -329,7 +334,8 @@ function openMail() {
       if (!list.length) lb.innerHTML = '<div class="empty">メッセージはありません</div>';
       list.forEach(m => {
         const it = OS.el('button', 'ml-item' + (m.unread ? ' unread' : '') + (cur === m ? ' sel' : ''));
-        it.innerHTML = `<div class="ml-from"></div><div class="ml-subj"></div><div class="ml-date">${m.date}</div>`;
+        const tag = m.job ? (m.jobState === 'open' ? '<em class="tag req">要返信</em>' : m.jobState === 'accepted' ? '<em class="tag ok">受けた</em>' : '') : m.choices && m.chosen == null ? '<em class="tag req">対応が必要</em>' : '';
+        it.innerHTML = `<div class="ml-from"></div><div class="ml-subj"></div><div class="ml-date">${m.date}${tag}</div>`;
         it.querySelector('.ml-from').textContent = w.box === 'sent' ? '宛先: ' + m.to : m.from;
         it.querySelector('.ml-subj').textContent = m.subject;
         it.onclick = () => { w.sel = m.id; m.unread = false; save(); updateClock(); OS.refresh('mail'); };
@@ -342,6 +348,7 @@ function openMail() {
         rd.querySelector('.who').textContent = w.box === 'sent' ? '自分 → ' + cur.to : cur.from;
         rd.querySelector('.ml-body').innerHTML = textHtml(cur.body);
         rd.querySelector('.ml-backbtn').onclick = () => { w.sel = null; OS.refresh('mail'); };
+        if (S.phase === 'group' && (cur.job || cur.choices)) G.mailActions(rd, cur);
       } else rd.innerHTML = '<div class="empty">読むメッセージを選んでください</div>';
       body.querySelectorAll('[data-b]').forEach(b => b.onclick = () => { w.box = b.dataset.b; w.sel = null; OS.refresh('mail'); });
       body.querySelector('[data-new]').onclick = openCompose;
@@ -412,9 +419,10 @@ function searchAll(q) {
     c.search.forEach(r => hits.push(Object.assign({ cid: c.id }, r)));
   });
   EXTRA_SEARCH.forEach(e => { if (e.q.some(k => n.includes(k))) hits = hits.concat(e.res); });
+  if (S.phase === 'group') hits = G.searchHits(n).concat(hits);
   return { hits, cands };
 }
-const SITE_URL = { x: 'https://z.example.com/', xsearch: 'https://z.example.com/search?q=', bbs: 'https://bbs.example.net/test/read.cgi/', sns: 'https://sns.example.com/', news: 'https://news.example.jp/article/', video: 'https://video.example.com/watch?v=', blog: 'https://blog.example.jp/entry/' };
+const SITE_URL = { wiki: 'https://minna-wiki.example.org/wiki/', x: 'https://z.example.com/', xsearch: 'https://z.example.com/search?q=', bbs: 'https://bbs.example.net/test/read.cgi/', sns: 'https://sns.example.com/', news: 'https://news.example.jp/article/', video: 'https://video.example.com/watch?v=', blog: 'https://blog.example.jp/entry/' };
 function openBrowser(q) {
   OS.open('browser', {
     title: 'ヤマビコ検索 - ブラウザ', icon: 'browser', w: 860, h: 560,
@@ -483,7 +491,7 @@ function doSearch(q, go) {
   if (!q) return;
   const { cands } = searchAll(q);
   const fresh = cands.filter(c => !S.searched[c.id]);
-  if (fresh.length) {
+  if (fresh.length && S.phase !== 'group') {
     if (S.submitted) { OS.dialog('ブラウザ', 'もう選考は終わっています。', null, 'info'); return; }
     if (!useSlot(`ネットで調べる: ${fresh.map(c => c.name.replace(' ', '')).join('・')}`)) return;
     fresh.forEach(c => S.searched[c.id] = true);
@@ -510,6 +518,7 @@ function zShell(head, inner) {
   return `<div class="z"><div class="zcol"><div class="zbar"><span class="zlogo">Z</span><div class="zsearch">${Icons.get('search')}<span>${escapeHtml(head)}</span></div></div>${inner}</div></div>`;
 }
 function renderSite(r) {
+  if (r.type === 'wiki') return G.wikiHtml();
   if (r.type === 'xsearch') return zShell(r.q, `<div class="ztabs"><span class="on">話題</span><span>最新</span><span>アカウント</span><span>メディア</span></div>
     ${r.posts.map(p => xPost(...p)).join('')}<div class="zend">これ以上の結果はありません</div>`);
   if (r.type === 'x') {
@@ -560,6 +569,7 @@ function openChat(room) {
       body.querySelector('.ch-back').onclick = () => { w.inRoom = false; OS.refresh('chat'); };
       const lg = body.querySelector('.ch-log');
       r.log.forEach(m => {
+        if (!m[0]) { lg.append(OS.el('div', 'msg-sys', escapeHtml(m[2]))); return; }
         const me = m[0] === '自分';
         const d = OS.el('div', 'msg' + (me ? ' me' : ''));
         d.innerHTML = `${me ? '' : `<span class="av">${escapeHtml(m[0][0])}</span>`}<div><div class="msg-n">${me ? '' : escapeHtml(m[0])}</div><div class="bub"></div></div><span class="msg-t">${me ? '既読<br>' : ''}${escapeHtml(m[1].split(' ')[1] || '')}</span>`;
@@ -589,6 +599,7 @@ function pushChat(room, who, text) {
 
 // ---------- カレンダー ----------
 function openCalendar() {
+  if (S.phase === 'group') return G.openCalendar();
   OS.open('calendar', {
     title: 'カレンダー', icon: 'calendar', w: 760, h: 440,
     render(body) {
@@ -654,16 +665,18 @@ function openSheet() {
         const B = [['項目', '月額', '備考'], ['メンバー固定給', '¥80,000', '×人数 / 歩合は別'], ['寮(1K×2)', '¥142,000', '相部屋前提'], ['レッスン', '¥220,000', '三浦先生込み'], ['衣装', '¥0', '←未定!!'], ['宣伝', '¥50,000', '少ない'], ['', '', ''], ['半年で結果出なければ見直し(部長)', '', '']];
         B.forEach((r, i) => rows += `<tr><th>${i + 1}</th>${r.map((x, j) => `<td class="${i === 0 ? 'hd' : j === 1 ? 'num' : ''} ${x === '¥0' ? 'red' : ''}">${escapeHtml(x)}</td>`).join('')}<td></td><td></td><td></td><td></td></tr>`);
         for (let n = B.length + 1; n < 22; n++) rows += `<tr><th>${n}</th>${'<td></td>'.repeat(7)}</tr>`;
+      } else if (S.phase === 'group' && (w.tab === 'money' || w.tab === 'members')) {
+        rows = G.sheetRows(w.tab);
       } else {
         for (let n = 1; n < 22; n++) rows += `<tr><th>${n}</th>${'<td></td>'.repeat(7)}</tr>`;
       }
       body.innerHTML = `
         <div class="xl-tabs"><span class="file">ファイル</span><span class="on">ホーム</span><span>挿入</span><span>ページ レイアウト</span><span>数式</span><span>データ</span><span>校閲</span><span>表示</span></div>
         <div class="xl-ribbon"><div class="rg"><span class="dd">游ゴシック</span><span class="dd s">11</span><b>B</b><i>I</i><u>U</u></div><div class="rg"><span class="fill"></span><span class="fcol">A</span></div><div class="rg grow"></div>
-          <div class="rg"><button class="btn primary" data-send ${S.submitted ? 'disabled' : ''}>${Icons.get('mail')}${S.submitted ? '送信済み' : '部長にメールで送る'}</button></div></div>
+          <div class="rg"><button class="btn primary" data-send ${S.submitted ? 'disabled' : ''} ${S.phase === 'group' ? 'hidden' : ''}>${Icons.get('mail')}${S.submitted ? '送信済み' : '部長にメールで送る'}</button></div></div>
         <div class="xl-fx"><span class="nm">A1</span><span class="fx">fx</span><span class="fv">2026秋オーディション 最終選考表</span></div>
         <div class="xl-grid"><table><thead><tr><th></th>${cols.map((c, i) => `<th class="${i === 3 || i === 4 ? 'nx' : ''}">${c}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
-        <div class="xl-sheets"><button data-t="main" class="${w.tab === 'main' ? 'on' : ''}">選考</button><button data-t="budget" class="${w.tab === 'budget' ? 'on' : ''}">予算</button><button data-t="s3" class="${w.tab === 's3' ? 'on' : ''}">Sheet3</button><span>+</span></div>
+        <div class="xl-sheets"><button data-t="main" class="${w.tab === 'main' ? 'on' : ''}">選考</button>${S.phase === 'group' ? G.sheetTabs().map(([k, v]) => `<button data-t="${k}" class="${w.tab === k ? 'on' : ''}">${v}</button>`).join('') : `<button data-t="budget" class="${w.tab === 'budget' ? 'on' : ''}">予算</button>`}<button data-t="s3" class="${w.tab === 's3' ? 'on' : ''}">Sheet3</button><span>+</span></div>
         <div class="statusbar"><span>準備完了</span><span>${w.tab === 'main' ? `合格: ${passN} 人` : ''}</span></div>`;
       const fv = body.querySelector('.fv'), nm = body.querySelector('.nm');
       body.querySelectorAll('.xl-grid td').forEach(td => td.addEventListener('click', () => {
@@ -677,6 +690,7 @@ function openSheet() {
       }));
       body.querySelectorAll('[data-j]').forEach(s => s.onchange = () => { S.sheet[s.dataset.j].j = s.value; save(); OS.refresh('sheet'); });
       body.querySelectorAll('[data-n]').forEach(inp => { inp.value = S.sheet[inp.dataset.n].note; inp.oninput = () => { S.sheet[inp.dataset.n].note = inp.value; fv.textContent = inp.value; save(); }; });
+      body.querySelectorAll('[data-gn]').forEach(inp => { S.gnotes = S.gnotes || {}; inp.value = S.gnotes[inp.dataset.gn] || ''; inp.oninput = () => { S.gnotes[inp.dataset.gn] = inp.value; fv.textContent = inp.value; save(); }; });
       body.querySelectorAll('[data-t]').forEach(b => b.onclick = () => { w.tab = b.dataset.t; OS.refresh('sheet'); });
       const send = body.querySelector('[data-send]');
       if (send) send.onclick = trySubmit;
@@ -725,7 +739,7 @@ ${pass.map(c => '・' + L[c.id]).join('\n')}
     pushChat('group', '桐谷', 'みなさん合格おめでとうございます。まずは一言ずつどうぞ');
     let t = 0;
     pass.forEach(c => c.greet.forEach(g => { t += 700 + Math.random() * 900; setTimeout(() => pushChat('group', c.name.replace(' ', ''), g), t); }));
-    setTimeout(() => OS.dialog('試作版はここまで', 'オーディションの部分はここまでです。\n\nデスクトップに「答え合わせ(開発用).txt」を置きました。候補者の本当の能力と裏の事情が書いてあります(本番では見えません)。\n\nグループ結成後の活動は、これから一緒に詰めていきましょう。', null, 'info'), t + 2500);
+    setTimeout(() => OS.dialog('オーディション終了', 'オーディションの部分はここまでです。\n\nデスクトップに「答え合わせ(開発用).txt」を置きました。候補者の本当の能力と裏の事情が書いてあります(本番では見えません)。\n\nここから、グループ結成後の1か月が始まります。', [{ label: '1週間後へ', primary: true, fn: () => { ['calendar', 'pick', 'compose'].forEach(OS.close); G.start(pass.map(c => c.id)); } }], 'info'), t + 2500);
   }, 4000);
 }
 function openAnswer() {
@@ -788,6 +802,9 @@ function boot() {
   document.querySelectorAll('[data-pin]').forEach(b => b.onclick = () => ({ explorer: () => openExplorer('audition'), mail: openMail, browser: () => openBrowser(), chat: () => openChat(), calendar: openCalendar, sheet: openSheet }[b.dataset.pin])());
   document.getElementById('tb-search').onsubmit = e => { e.preventDefault(); const v = e.target.querySelector('input').value; e.target.querySelector('input').value = ''; openBrowser(v); };
   const lock = document.getElementById('lock');
+  // 途中で閉じた場合の続き
+  const pass = () => CANDIDATES.filter(c => S.sheet[c.id].j === '合格').map(c => c.id);
+  if (S.submitted && (S.phase !== 'group' || !S.g.name)) setTimeout(() => OS.dialog('オーディション終了', 'ここから、グループ結成後の1か月が始まります。', [{ label: '1週間後へ', primary: true, fn: () => G.start(pass()) }], 'info'), 900);
   if (S.booted) { lock.remove(); return; }
   lock.querySelector('.lk-time').textContent = '9:12';
   const enter = () => {

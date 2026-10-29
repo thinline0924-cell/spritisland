@@ -150,7 +150,24 @@ const OS = (() => {
     d.querySelector('button.primary, button')?.focus();
   }
 
-  return { open, close, focus, refresh, toast, dialog, wins, renderTaskbar, el, isNarrow };
+  // 入力欄つきのダイアログ
+  function prompt(title, message, def, fn) {
+    const shade = el('div', 'shade');
+    const d = el('div', 'dialog');
+    d.innerHTML = `<div class="dlg-title"></div><div class="dlg-main"><div class="dlg-icon">${Icons.get('pen')}</div><div style="flex:1"><div class="dlg-msg"></div><input class="dlg-input"></div></div><div class="dlg-btns"><button class="primary">OK</button></div>`;
+    d.querySelector('.dlg-title').textContent = title;
+    d.querySelector('.dlg-msg').textContent = message;
+    const inp = d.querySelector('input');
+    inp.value = def || '';
+    const ok = () => { const v = inp.value.trim(); if (!v) { inp.focus(); return; } shade.remove(); fn(v); };
+    d.querySelector('button').onclick = ok;
+    inp.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) ok(); };
+    shade.append(d);
+    document.body.append(shade);
+    inp.focus();
+  }
+
+  return { open, close, focus, refresh, toast, dialog, prompt, wins, renderTaskbar, el, isNarrow };
 })();
 
 function escapeHtml(s) {

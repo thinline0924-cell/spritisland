@@ -13,6 +13,7 @@
   --accent-bg: #dbe9f9;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; overflow: hidden; }
 body { font: 13px/1.5 var(--ui); color: var(--text); background: #1d2a3a; -webkit-font-smoothing: antialiased; }
 button { font: inherit; color: inherit; }
@@ -462,3 +463,61 @@ svg { display: block; }
   .lk-time { font-size: 64px; }
   #startmenu { left: 4px; right: 4px; width: auto; }
 }
+.dlg-input { width: 100%; margin-top: 10px; height: 30px; border: 1px solid #c4c8cd; border-bottom: 2px solid var(--accent); border-radius: 4px; padding: 0 8px; font: inherit; outline: 0; }
+
+/* ---------- 結成後 ---------- */
+.neg { color: #c0392b; }
+.cal.wk { grid-template-columns: 40px repeat(7, minmax(0, 1fr)); }
+.cal-d.we { color: #b03a2e; background: #fdf6f5 !important; }
+.ev.job { background: #dcefe2 !important; color: #1e5631; border-left: 3px solid #3c9a5f; }
+.ev { position: relative; }
+.ev .x { position: absolute; top: 2px; right: 2px; width: 18px; height: 18px; border: 0; background: rgba(0,0,0,.06); border-radius: 3px; cursor: pointer; font-size: 12px; line-height: 18px; padding: 0; color: #6b4300; }
+.ev .x:hover { background: rgba(0,0,0,.15); }
+.cal-go { flex: none; display: flex; align-items: center; justify-content: flex-end; gap: 14px; padding: 10px 14px; border-top: 1px solid var(--line2); font-size: 12px; color: var(--sub); }
+.cal-go .btn { padding: 6px 18px; font-size: 13px; }
+.job-act { margin: 0 0 16px; padding: 12px 14px; background: #f4f7fb; border: 1px solid #d5e0ec; border-radius: 6px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.job-act > span { font-size: 11.5px; color: var(--sub); }
+.job-act .st { font-weight: 700; color: #2b4a6b; font-size: 12.5px; }
+.job-act .st.declined, .job-act .st.expired { color: #888; }
+.job-act.choices { margin: 18px 0 0; flex-direction: column; align-items: stretch; background: #fffaf0; border-color: #ecd9b0; }
+.job-act.choices .btn { justify-content: flex-start; text-align: left; padding: 7px 12px; white-space: normal; }
+.ch-q { font-weight: 700; font-size: 12.5px; }
+.ch-r { line-height: 1.75; padding-top: 4px; }
+.tag { font-style: normal; font-size: 10.5px; padding: 0 6px; border-radius: 3px; margin-left: 8px; }
+.tag.req { background: #fde2dc; color: #b03a2e; }
+.tag.ok { background: #dcefe2; color: #1e5631; }
+.asg { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.asg-h { padding: 10px 14px; border-bottom: 1px solid var(--line2); }
+.asg-h b { display: block; }
+.asg-h span { font-size: 12px; color: var(--sub); }
+.asg-list { flex: 1; overflow: auto; padding: 6px; }
+.asg-row { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 4px; cursor: pointer; }
+.asg-row:hover { background: #eef4fb; }
+.asg-row.off { opacity: .5; cursor: default; }
+.asg-row small { display: block; font-size: 11px; color: #777; }
+.asg-foot { display: flex; justify-content: space-between; align-items: center; padding: 10px 14px; border-top: 1px solid var(--line2); }
+.plan { padding: 6px 16px 16px; overflow: auto; }
+.plan h4 { margin: 14px 0 6px; font-size: 13px; }
+.plan h4 small { font-weight: 400; color: var(--sub); margin-left: 6px; font-size: 11.5px; }
+.pl-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pl-col { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.msg-sys { align-self: center; font-size: 11px; color: #fff; background: rgba(0,0,0,.18); padding: 2px 12px; border-radius: 10px; }
+.wiki { font-family: "Linux Libertine", Georgia, var(--mincho); max-width: 760px; }
+.wiki h1 { font-weight: 400; font-size: 26px; border-bottom: 1px solid #a2a9b1; margin: 0 0 2px; }
+.wiki h2 { font-weight: 400; font-size: 20px; border-bottom: 1px solid #a2a9b1; margin: 22px 0 8px; }
+.wiki h3 { font-size: 15px; margin: 12px 0 4px; }
+.wiki p, .wiki li { font-family: var(--ui); font-size: 13.5px; line-height: 1.7; }
+.wk-sub { font-size: 12px; color: #54595d; font-family: var(--ui); margin-bottom: 10px; }
+.wk-box { float: right; margin: 0 0 12px 16px; border: 1px solid #a2a9b1; background: #f8f9fa; font: 12.5px var(--ui); border-collapse: collapse; width: 230px; }
+.wk-box th { background: #e6dcf5; padding: 6px; }
+.wk-box td { padding: 4px 8px; border-top: 1px solid #eaecf0; }
+.wk-cat { clear: both; margin-top: 24px; padding: 6px 10px; border: 1px solid #a2a9b1; background: #f8f9fa; font: 12px var(--ui); }
+@media (max-width: 759px) {
+  .cal.wk { grid-template-columns: 30px repeat(7, minmax(0, 1fr)); }
+  .cal.wk .cal-d { font-size: 9.5px; padding: 4px 2px; }
+  .cal.wk .ev { font-size: 9.5px; padding: 3px 2px; word-break: break-all; }
+  .cal.wk .ev.free .btn { padding: 1px 3px; font-size: 9.5px; }
+  .wk-box { float: none; width: 100%; margin: 0 0 12px; }
+}
+.cal.wk { grid-template-rows: auto 1fr 1fr; }
+.cal-left b.pos { color: #1b1b1b; }
