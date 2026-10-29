@@ -395,7 +395,7 @@ const EXTRA_SEARCH = [
     { type: 'bbs', title: 'ミツバ企画ってどうなの?', site: '転職口コミサイト', date: '2026/06/02', snippet: '★1.9 「終電で帰れたら勝ち」「部長はいい人。それ以外は…」', posts: [['1', '元社員', '2026/06/02', '終電で帰れたら勝ち\nタクシー代は出ない'], ['2', '現役', '2026/06/10', '部長はいい人。それ以外は察して'], ['5', '元社員', '2026/07/01', 'タレントの子たちが一番かわいそう']] },
   ] },
   { q: ['ルミエール', 'lumière', 'lumiere', 'あかり'], res: [
-    { type: 'sns', title: 'Lumière(ルミエール)公式(@lumiere_official)', site: 'SNS', date: '2026/10/25', snippet: '12/27 年末ワンマン 開催決定!チケット一般発売中', posts: [['2026/10/25 20:00', '12/27 年末ワンマンライブ開催決定!\nチケット一般発売中です✨', '♡ 820'], ['2026/10/18 21:00', '今夜のメンバー配信は、あかりの体調不良のためお休みします', '♡ 301']] },
+    { type: 'x', title: 'Lumière(ルミエール)公式(@lumiere_official)', site: 'Z', date: '2026/10/25', snippet: '12/27 年末ワンマン 開催決定!チケット一般発売中', posts: [['2026/10/25 20:00', '12/27 年末ワンマンライブ開催決定!\nチケット一般発売中です✨', '♡ 820'], ['2026/10/18 21:00', '今夜のメンバー配信は、あかりの体調不良のためお休みします', '♡ 301']] },
   ] },
 ];
 function searchAll(q) {
@@ -406,11 +406,15 @@ function searchAll(q) {
     return keys.some(k => k && n.includes(k));
   });
   let hits = [];
-  cands.forEach(c => c.search.forEach(r => hits.push(Object.assign({ cid: c.id }, r))));
+  cands.forEach(c => {
+    const xs = XSEARCH[c.id];
+    if (xs) hits.push({ cid: c.id, type: 'xsearch', q: c.name.replace(' ', ''), title: `「${c.name.replace(' ', '')}」の検索結果 / Z`, site: 'Z', date: '', snippet: xs[0][3].replace(/\n/g, ' '), posts: xs });
+    c.search.forEach(r => hits.push(Object.assign({ cid: c.id }, r)));
+  });
   EXTRA_SEARCH.forEach(e => { if (e.q.some(k => n.includes(k))) hits = hits.concat(e.res); });
   return { hits, cands };
 }
-const SITE_URL = { bbs: 'https://bbs.example.net/test/read.cgi/', sns: 'https://sns.example.com/', news: 'https://news.example.jp/article/', video: 'https://video.example.com/watch?v=', blog: 'https://blog.example.jp/entry/' };
+const SITE_URL = { x: 'https://z.example.com/', xsearch: 'https://z.example.com/search?q=', bbs: 'https://bbs.example.net/test/read.cgi/', sns: 'https://sns.example.com/', news: 'https://news.example.jp/article/', video: 'https://video.example.com/watch?v=', blog: 'https://blog.example.jp/entry/' };
 function openBrowser(q) {
   OS.open('browser', {
     title: 'ヤマビコ検索 - ブラウザ', icon: 'browser', w: 860, h: 560,
@@ -422,7 +426,10 @@ function openBrowser(q) {
       w.go = go;
       let url = 'https://yamabiko-search.jp/';
       if (cur.page === 'results') url += 'search?q=' + encodeURIComponent(cur.q);
-      if (cur.page === 'view') url = SITE_URL[cur.r.type] + (Math.abs(hash(cur.r.title)) % 99999999);
+      if (cur.page === 'view') {
+        const r = cur.r;
+        url = SITE_URL[r.type] + (r.type === 'xsearch' ? encodeURIComponent(r.q) + '&src=typed_query' : r.type === 'x' ? xHandle(r.title).id : Math.abs(hash(r.title)) % 99999999);
+      }
       body.innerHTML = `
         <div class="br-tabs"><div class="br-tab on">${Icons.get('browser')}<span class="tt"></span></div><div class="br-plus">+</div></div>
         <div class="br-bar"><button class="flat" data-back ${w.pos ? '' : 'disabled'}>${Icons.get('back')}</button><button class="flat" data-fwd ${w.pos < w.stack.length - 1 ? '' : 'disabled'}>${Icons.get('fwd')}</button><button class="flat">${Icons.get('reload')}</button>
@@ -485,7 +492,39 @@ function doSearch(q, go) {
   save();
   go({ page: 'results', q });
 }
+// Z(X風のSNS)
+function xHandle(title) {
+  const m = title.match(/^(.*)\(@([\w_]+)\)$/);
+  return m ? { name: m[1], id: m[2] } : { name: title, id: 'unknown' };
+}
+function xNum(n) { return typeof n === 'number' ? n.toLocaleString() : n; }
+function xPost(name, id, time, text, rep, rt, like, view, to) {
+  const hue = Math.abs(hash(id)) % 360;
+  return `<div class="zp"><div class="zav" style="background:hsl(${hue} 30% 72%)">${escapeHtml(name[0])}</div><div class="zm">
+    <div class="zh"><b>${escapeHtml(name)}</b><span>@${escapeHtml(id)} · ${escapeHtml(time)}</span></div>
+    ${to ? `<div class="zto">返信先: <span>@${escapeHtml(to)}</span>さん</div>` : ''}
+    <div class="zt">${textHtml(text)}</div>
+    <div class="za"><span>${Icons.get('xrep')}${rep ? xNum(rep) : ''}</span><span>${Icons.get('xrt')}${rt ? xNum(rt) : ''}</span><span>${Icons.get('xlike')}${like ? xNum(like) : ''}</span><span>${Icons.get('xview')}${view || ''}</span></div></div></div>`;
+}
+function zShell(head, inner) {
+  return `<div class="z"><div class="zcol"><div class="zbar"><span class="zlogo">Z</span><div class="zsearch">${Icons.get('search')}<span>${escapeHtml(head)}</span></div></div>${inner}</div></div>`;
+}
 function renderSite(r) {
+  if (r.type === 'xsearch') return zShell(r.q, `<div class="ztabs"><span class="on">話題</span><span>最新</span><span>アカウント</span><span>メディア</span></div>
+    ${r.posts.map(p => xPost(...p)).join('')}<div class="zend">これ以上の結果はありません</div>`);
+  if (r.type === 'x') {
+    const h = xHandle(r.title);
+    const hue = Math.abs(hash(h.id)) % 360;
+    return zShell(h.name, `<div class="zprof"><div class="zcover"></div><div class="zav big" style="background:hsl(${hue} 30% 72%)">${escapeHtml(h.name[0])}</div>
+      <div class="zpn"><b>${escapeHtml(h.name)}</b><span>@${escapeHtml(h.id)}</span></div></div>
+      <div class="ztabs"><span class="on">ポスト</span><span>返信</span><span>メディア</span><span>いいね</span></div>
+      ${r.posts.map(p => {
+        const like = p[2] ? parseInt(p[2].replace(/[^0-9]/g, ''), 10) : 0;
+        const del = p[1].startsWith('(このポストは削除');
+        return del ? `<div class="zp zdel">${textHtml(p[1])}<div class="zh"><span>${escapeHtml(p[0])}</span></div></div>`
+          : xPost(h.name, h.id, p[0].slice(0, 10), p[1], Math.round(like / 30), Math.round(like / 12), like, (like * 23).toLocaleString());
+      }).join('')}`);
+  }
   if (r.type === 'bbs') return `<div class="site bbs"><div class="bbs-h">${escapeHtml(r.site)}</div><h1>${escapeHtml(r.title)}</h1>
     ${r.posts.map(p => `<dl><dt>${p[0]} ：<b>${escapeHtml(p[1])}</b> ：${escapeHtml(p[2])}</dt><dd>${textHtml(p[3])}</dd></dl>`).join('')}<div class="bbs-f">(中略)　新着レスの表示</div></div>`;
   if (r.type === 'sns') return `<div class="site sns"><div class="sns-prof"><div class="sns-av"></div><div><b>${escapeHtml(r.title)}</b></div></div>

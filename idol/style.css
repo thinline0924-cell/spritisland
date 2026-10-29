@@ -304,6 +304,36 @@ svg { display: block; }
 .news-b { line-height: 1.9; }
 .news-ad { margin-top: 30px; height: 90px; background: #f0f0f0; color: #aaa; display: grid; place-items: center; font-size: 11px; }
 
+/* Z(X風のSNS) */
+.z { min-height: 100%; background: #fff; color: #0f1419; font-family: -apple-system, "Segoe UI", "Hiragino Sans", "Noto Sans JP", "IPAGothic", sans-serif; }
+.zcol { max-width: 600px; margin: 0 auto; min-height: 100%; border-left: 1px solid #eff3f4; border-right: 1px solid #eff3f4; }
+.zbar { position: sticky; top: 0; z-index: 1; display: flex; align-items: center; gap: 14px; padding: 8px 16px; background: rgba(255,255,255,.92); }
+.zlogo { font: 900 26px/1 Arial, sans-serif; width: 28px; text-align: center; }
+.zsearch { flex: 1; display: flex; align-items: center; gap: 10px; height: 38px; padding: 0 16px; border-radius: 19px; background: #eff3f4; color: #0f1419; font-size: 14px; }
+.zsearch svg { width: 15px; height: 15px; color: #536471; }
+.ztabs { display: flex; border-bottom: 1px solid #eff3f4; }
+.ztabs span { flex: 1; text-align: center; padding: 14px 0 12px; color: #536471; font-size: 14px; }
+.ztabs span.on { color: #0f1419; font-weight: 700; box-shadow: inset 0 -4px 0 -0px #fff, inset 0 -4px 0 #1d9bf0; }
+.zp { display: flex; gap: 10px; padding: 12px 16px; border-bottom: 1px solid #eff3f4; }
+.zav { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; color: #fff; font-weight: 700; }
+.zm { flex: 1; min-width: 0; }
+.zh { font-size: 14px; display: flex; gap: 4px; flex-wrap: wrap; }
+.zh span { color: #536471; }
+.zto { font-size: 14px; color: #536471; }
+.zto span { color: #1d9bf0; }
+.zt { font-size: 15px; line-height: 1.5; margin: 2px 0 8px; word-break: break-word; }
+.za { display: flex; justify-content: space-between; max-width: 420px; color: #536471; font-size: 12.5px; }
+.za span { display: flex; align-items: center; gap: 4px; }
+.za svg { width: 17px; height: 17px; }
+.zdel { display: block; background: #f7f9f9; color: #536471; font-size: 14px; }
+.zend { padding: 30px; text-align: center; color: #536471; font-size: 14px; }
+.zprof { position: relative; border-bottom: 1px solid #eff3f4; padding-bottom: 14px; }
+.zcover { height: 130px; background: #cfd9de; }
+.zav.big { width: 84px; height: 84px; font-size: 30px; border: 4px solid #fff; margin: -44px 0 0 16px; }
+.zpn { padding: 6px 16px 0; }
+.zpn b { display: block; font-size: 19px; }
+.zpn span { color: #536471; font-size: 14px; }
+
 /* ---------- チャット ---------- */
 .ch { flex: 1; min-height: 0; display: flex; }
 .ch-list { flex: none; width: 220px; overflow: auto; border-right: 1px solid var(--line2); background: #f7f8f9; }

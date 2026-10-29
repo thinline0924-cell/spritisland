@@ -36,6 +36,10 @@ const Icons = (() => {
     lock: s(`<rect x="6" y="11" width="12" height="9" rx="1.5" fill="currentColor"/><path d="M8.5 11V8a3.5 3.5 0 0 1 7 0v3" fill="none" stroke="currentColor" stroke-width="1.6"/>`),
     user: s(`<circle cx="12" cy="9" r="4" fill="#9aa3ad"/><path d="M4 21a8 8 0 0 1 16 0z" fill="#9aa3ad"/>`),
     pen: s(`<path d="M4 20l1-4.5L15.5 5l3.5 3.5L8.5 19z" fill="none" stroke="currentColor" stroke-width="1.5"/>`),
+    xrep: s(`<path d="M4 11a7 6.5 0 0 1 7-6.5h2a7 6.5 0 0 1 0 13h-1l-5 3v-3.6A6.5 6.5 0 0 1 4 11z" fill="none" stroke="currentColor" stroke-width="1.5"/>`),
+    xrt: s(`<path d="M7 18V7h9M13 4l3 3-3 3M17 6v11H8M11 20l-3-3 3-3" fill="none" stroke="currentColor" stroke-width="1.5"/>`),
+    xlike: s(`<path d="M12 20s-7.5-4.6-7.5-10A4.2 4.2 0 0 1 12 7.5 4.2 4.2 0 0 1 19.5 10c0 5.4-7.5 10-7.5 10z" fill="none" stroke="currentColor" stroke-width="1.5"/>`),
+    xview: s(`<path d="M5 20V12M10 20V5M15 20v-9M20 20V9" stroke="currentColor" stroke-width="1.6"/>`),
     power: s(`<path d="M12 3v8" stroke="currentColor" stroke-width="1.8"/><path d="M7 6.5a7 7 0 1 0 10 0" fill="none" stroke="currentColor" stroke-width="1.8"/>`),
   };
   return { get: k => lib[k] || lib.txt };
