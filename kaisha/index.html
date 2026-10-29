@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>丸栄商事 社内ポータル</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&family=BIZ+UDPMincho:wght@400;700&display=swap">
+  <link rel="stylesheet" href="./style.css">
+  <script type="importmap">
+    { "imports": { "three": "./lib/three.module.min.js" } }
+  </script>
+</head>
+<body>
+<div id="app">
+  <header id="top">
+    <div class="sysbar">
+      <span class="brand"><span class="mark">丸栄</span>社内ポータル</span>
+      <span class="sysname">MARUEI-NET Ver.4.2.1</span>
+      <span class="login">ログイン中:システム管理者(閲覧専用)</span>
+      <button id="menu-new" class="lnk">はじめから</button>
+    </div>
+    <div class="infobar">
+      <div id="clock" class="clock"></div>
+      <div id="wx" class="wx"></div>
+      <div id="presence" class="presence"></div>
+      <div id="cash" class="cashbox"></div>
+      <div id="speed" class="speed" role="group" aria-label="時間の速さ">
+        <button data-s="0" title="一時停止">停止</button>
+        <button data-s="1" title="1秒で1分">×1</button>
+        <button data-s="4" title="1秒で4分">×4</button>
+        <button data-s="15" title="1秒で15分">×15</button>
+        <button data-s="60" title="1秒で1時間">×60</button>
+        <button data-s="skip" title="次の出社時刻まで">翌朝へ</button>
+      </div>
+    </div>
+  </header>
+  <main id="main">
+    <section id="stage">
+      <div class="paneltitle"><span>構内カメラ ― 本社・物流センター(新潟市東区)</span>
+        <span id="floorbar" class="floorbar"><button data-f="3" class="on">全館</button><button data-f="2">2階まで</button><button data-f="1">1階のみ</button></span>
+      </div>
+      <div id="view"></div>
+      <div id="headline" class="headline" hidden></div>
+      <button id="paperbadge" class="paperbadge" hidden>朝刊が届いています</button>
+      <div class="hint">ドラッグで回転・ホイールで拡大・人をクリックで社員情報</div>
+    </section>
+    <aside id="side">
+      <nav id="tabs" class="tabs">
+        <button data-tab="chat" class="on">社内チャット<span class="badge" hidden></span></button>
+        <button data-tab="talk">会話</button>
+        <button data-tab="board">掲示板</button>
+        <button data-tab="nippo">日報</button>
+        <button data-tab="biz">業績</button>
+        <button data-tab="people">名簿</button>
+        <button data-tab="clients">取引先</button>
+        <button data-tab="paper">新聞</button>
+      </nav>
+      <div id="tabbody" class="tabbody"></div>
+    </aside>
+    <section id="logpane">
+      <div class="paneltitle"><span>出来事ログ</span>
+        <span id="logfilter" class="floorbar"><button data-f="all" class="on">すべて</button><button data-f="big">重要</button><button data-f="biz">業績・取引</button></span>
+      </div>
+      <div class="logwrap"><table class="grid log"><tbody id="logbody"></tbody></table></div>
+    </section>
+  </main>
+  <div id="modal" class="modal" hidden></div>
+</div>
+<script type="module" src="./js/main.js"></script>
+</body>
+</html>
