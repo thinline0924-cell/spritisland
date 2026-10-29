@@ -64,3 +64,8 @@ GitHub の `main` に変更が入ると、Render が自動で公開し直しま�
 
 このゲームはファンメイドのアレンジ作品です。カード名・効果文・数値は独自のもので、
 「スピリット・アイランド」(Greater Than Games)の公式製品とは関係ありません。
+
+## (試作)アイドルグループ育成ローグライク
+
+`idol/` フォルダに、別のゲームの試作が入っています。公開したサイトの URL の末尾に `/idol/` を付けると遊べます(例: `https://spritisland-xxxx.onrender.com/idol/`)。
+手元で試すときは、このリポジトリのフォルダで `python3 -m http.server` を実行して `http://localhost:8000/idol/` を開いてください。
