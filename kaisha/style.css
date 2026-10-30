@@ -210,7 +210,9 @@ button:focus-visible { outline: 2px solid #e1a32b; outline-offset: 1px; }
   .chlist { display: none; }
   .chsel { display: block; width: 100%; }
   .hint { display: none; }
-  .paneltitle > span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; }
+  .paneltitle > span:first-child { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; min-width: 0; flex: 1; }
+  .paneltitle .floorbar { display: flex; flex: none; white-space: nowrap; }
+  .v-bubble { font-size: 10.5px; max-width: 130px; padding: 1px 4px; }
   .ptop { flex-direction: column; }
 }
 @media (prefers-reduced-motion: reduce) { .headline.show { animation: none; } }
